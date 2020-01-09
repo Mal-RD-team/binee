@@ -623,15 +623,15 @@ func (pe *PeFile) readImports() {
 
 	//get the section with imports data
 	var section Section
-	sectionFound := false
+	sectionNumber := -1
 	for i := 0; i < int(pe.CoffHeader.NumberOfSections); i++ {
 		if importsRva >= pe.Sections[i].VirtualAddress && importsRva < pe.Sections[i].VirtualAddress+pe.Sections[i].Size {
 			section = *pe.Sections[i]
-			sectionFound = true
+			sectionNumber = i
 		}
 	}
 
-	if sectionFound == false {
+	if sectionNumber == -1 {
 		return
 	}
 
@@ -640,11 +640,12 @@ func (pe *PeFile) readImports() {
 
 	// create raw data reader
 	r := bytes.NewReader(section.Raw)
-
+``
 	pe.Imports = make([]*ImportInfo, 0, 100)
 
 	//loop over each dll import
 	for i := tableOffset; ; i += uint32(binary.Size(ImportDirectory{})) {
+		section=*pe.Sections[sectionNumber]
 		if _, err := r.Seek(int64(i), io.SeekStart); err != nil {
 			log.Fatal(err)
 		}
@@ -658,7 +659,17 @@ func (pe *PeFile) readImports() {
 		if importDirectory.NameRva == 0 {
 			break
 		}
-
+		//In case the address is out of the section bounds
+		//the actual windows loader doesn't error, it moves to the next
+		//section as it treats it as a big array of raw data.
+		//This happens when the import table is crafted.
+		actualAddress:=importDirectory.NameRva-section.VirtualAddress
+		temp:=sectionNumber
+		for actualAddress>section.Size{
+			actualAddress-=section.Size;
+			section= *pe.Sections[temp+1]
+			temp+=1
+		}
 		name := strings.ToLower(readString(section.Raw[importDirectory.NameRva-section.VirtualAddress:]))
 
 		if pe.PeType == Pe32 {
