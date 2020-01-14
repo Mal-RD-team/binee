@@ -550,21 +550,15 @@ func (pe *PeFile) SetImportAddress(importInfo *ImportInfo, realAddr uint64) erro
 	} else {
 		importsRva = pe.OptionalHeader.(*OptionalHeader32P).DataDirectories[1].VirtualAddress
 	}
-
-	// get reference to Section holding the imports address table
-	var section Section
-	sectionFound := false
-	for i := 0; i < int(pe.CoffHeader.NumberOfSections); i++ {
-		if importsRva >= pe.Sections[i].VirtualAddress && importsRva < pe.Sections[i].VirtualAddress+pe.Sections[i].Size {
-			section = *pe.Sections[i]
-			sectionFound = true
-		}
-	}
-
-	// return error if not found
-	if sectionFound == false {
+	// get reference to Section holding the imports address table of this import.
+	//The offset of every import is not necessarily arranged properly, we have to get the correct address.
+	//TODO: The import info might be in a negative offset relative to import table(before it), needs to be handled.
+	currentImportRva := importsRva + uint32(importInfo.Offset)
+	section := pe.getSectionByRva(currentImportRva)
+	if section == nil {
 		return fmt.Errorf("error setting address for %s.%s to %x, section not found", importInfo.DllName, importInfo.FuncName, importInfo.Offset)
 	}
+	importInfo.Offset -= uint64(section.VirtualAddress)
 
 	//fmt.Println(importInfo)
 	//fmt.Printf("0x%x\n", importInfo.Offset)
@@ -622,16 +616,9 @@ func (pe *PeFile) readImports() {
 	}
 
 	//get the section with imports data
-	var section Section
-	sectionNumber := -1
-	for i := 0; i < int(pe.CoffHeader.NumberOfSections); i++ {
-		if importsRva >= pe.Sections[i].VirtualAddress && importsRva < pe.Sections[i].VirtualAddress+pe.Sections[i].Size {
-			section = *pe.Sections[i]
-			sectionNumber = i
-		}
-	}
+	section := pe.getSectionByRva(importsRva)
 
-	if sectionNumber == -1 {
+	if section == nil {
 		return
 	}
 
@@ -645,7 +632,7 @@ func (pe *PeFile) readImports() {
 
 	//loop over each dll import
 	for i := tableOffset; ; i += uint32(binary.Size(ImportDirectory{})) {
-		section=*pe.Sections[sectionNumber]
+		section = pe.getSectionByRva(importsRva)
 		if _, err := r.Seek(int64(i), io.SeekStart); err != nil {
 			log.Fatal(err)
 		}
@@ -663,18 +650,20 @@ func (pe *PeFile) readImports() {
 		//the actual windows loader doesn't error, it moves to the next
 		//section as it treats it as a big array of raw data.
 		//This happens when the import table is crafted.
-		actualAddress:=importDirectory.NameRva-section.VirtualAddress
-		temp:=sectionNumber
-		for actualAddress>section.Size{
-			actualAddress-=section.Size;
-			section= *pe.Sections[temp+1]
-			temp+=1
+		name := ""
+		if importDirectory.NameRva-section.VirtualAddress > section.Size {
+			requiredSection := pe.getSectionByRva(importDirectory.NameRva)
+			name = strings.ToLower(readString(requiredSection.Raw[importDirectory.NameRva-requiredSection.VirtualAddress:]))
+		} else {
+			name = strings.ToLower(readString(section.Raw[importDirectory.NameRva-section.VirtualAddress:]))
 		}
-		name := strings.ToLower(readString(section.Raw[importDirectory.NameRva-section.VirtualAddress:]))
 
 		if pe.PeType == Pe32 {
 			var thunk1 uint32
-			var thunk2 uint32 = importDirectory.ImportAddressTableRva - section.VirtualAddress
+			section = pe.getSectionByRva(importDirectory.ImportAddressTableRva)
+			//I changed this since in setting the address, its done relative to the import address table.
+			//var thunk2 uint32 = importDirectory.ImportAddressTableRva - section.VirtualAddress
+			var thunk2 uint32 = importDirectory.ImportAddressTableRva - (pe.getSectionByRva(importsRva).VirtualAddress)
 
 			importThunk := 0
 
@@ -685,7 +674,6 @@ func (pe *PeFile) readImports() {
 			} else {
 				importThunk = int(importDirectory.ImportAddressTableRva - section.VirtualAddress)
 			}
-
 			for ; ; importThunk += 4 {
 
 				if importThunk+4 > len(section.Raw) {
@@ -981,9 +969,9 @@ func (pe *PeFile) updateRelocations() error {
 	for {
 		block := RelocationBlock{}
 		if err := binary.Read(r, binary.LittleEndian, &block); err != nil {
-				if err==io.EOF { //In case the there was no padding.
-					break
-				}
+			if err == io.EOF { //In case the there was no padding.
+				break
+			}
 			log.Fatal(err)
 		}
 
