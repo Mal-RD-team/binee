@@ -451,29 +451,22 @@ type Export struct {
 }
 
 func (pe *PeFile) readExports() error {
-	var exportsRva int
+	var exportsRva uint32
 	if pe.PeType == Pe32 {
-		exportsRva = int(pe.OptionalHeader.(*OptionalHeader32).DataDirectories[0].VirtualAddress)
+		exportsRva = pe.OptionalHeader.(*OptionalHeader32).DataDirectories[0].VirtualAddress
 	} else {
-		exportsRva = int(pe.OptionalHeader.(*OptionalHeader32P).DataDirectories[0].VirtualAddress)
+		exportsRva = pe.OptionalHeader.(*OptionalHeader32P).DataDirectories[0].VirtualAddress
 	}
 
-	//get the section with imports data
-	var section Section
-	sectionFound := false
-	for i := 0; i < int(pe.CoffHeader.NumberOfSections); i++ {
-		if exportsRva >= int(pe.Sections[i].VirtualAddress) && exportsRva < int(pe.Sections[i].VirtualAddress+pe.Sections[i].Size) {
-			section = *pe.Sections[i]
-			sectionFound = true
-		}
-	}
+	//get the section with exports data
+	section := pe.getSectionByRva(exportsRva)
 
-	if sectionFound == false {
+	if section == nil {
 		return nil
 	}
 
 	// address in section where table resides
-	tableOffset := exportsRva - int(section.VirtualAddress)
+	tableOffset := exportsRva - section.VirtualAddress
 
 	// create raw data reader
 	r := bytes.NewReader(section.Raw)
@@ -488,16 +481,16 @@ func (pe *PeFile) readExports() error {
 		return fmt.Errorf("Error retrieving %s exportDirectory", pe.Path)
 	}
 
-	names := exportDirectory.NamesRva - section.VirtualAddress
-	ordinals := exportDirectory.OrdinalsRva - section.VirtualAddress
+	namesTableRVA := exportDirectory.NamesRva - section.VirtualAddress
+	ordinalsTableRVA := exportDirectory.OrdinalsRva - section.VirtualAddress
 	var ordinal uint16
 
 	pe.ExportNameMap = make(map[string]*Export)
 	pe.ExportOrdinalMap = make(map[int]*Export)
 
 	for i := 0; i < int(exportDirectory.NumberOfNamePointers); i++ {
-		// seek to names table
-		if _, err := r.Seek(int64(names+uint32(i*4)), io.SeekStart); err != nil {
+		// seek to index in names table
+		if _, err := r.Seek(int64(namesTableRVA+uint32(i*4)), io.SeekStart); err != nil {
 			return fmt.Errorf("Error seeking %s for exports names table: %v", pe.Path, err)
 		}
 
@@ -509,7 +502,7 @@ func (pe *PeFile) readExports() error {
 		name := readString(section.Raw[exportAddressTable.ExportRva-section.VirtualAddress:])
 
 		// get first Name in array
-		ordinal = binary.LittleEndian.Uint16(section.Raw[ordinals+uint32(i*2) : ordinals+uint32(i*2)+2])
+		ordinal = binary.LittleEndian.Uint16(section.Raw[ordinalsTableRVA+uint32(i*2) : ordinalsTableRVA+uint32(i*2)+2])
 
 		// seek to ordinals table
 		if _, err := r.Seek(int64(uint32(ordinal)*4+exportDirectory.FunctionsRva-section.VirtualAddress), io.SeekStart); err != nil {
@@ -524,7 +517,7 @@ func (pe *PeFile) readExports() error {
 
 		rva := exportOrdinalTable.ExportRva
 
-		export := &Export{name, ordinal, rva}
+		export := &Export{name, ordinal + uint16(exportDirectory.OrdinalBase), rva}
 		pe.Exports = append(pe.Exports, export)
 		pe.ExportNameMap[name] = export
 		pe.ExportOrdinalMap[int(ordinal)] = export

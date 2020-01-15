@@ -257,6 +257,11 @@ func (emu *WinEmulator) extractExports(pe *pefile.PeFile) {
 		if _, ok := emu.libAddressFunction[name]; !ok {
 			emu.libAddressFunction[name] = make(map[uint64]string)
 		}
+		if _, ok := emu.libOrdinalFunction[name]; !ok {
+			emu.libOrdinalFunction[name] = make(map[uint16]string)
+		}
+
+		emu.libOrdinalFunction[name][funcs.Ordinal] = funcs.Name
 		emu.libFunctionAddress[name][funcs.Name] = realAddr
 		emu.libAddressFunction[name][realAddr] = funcs.Name
 	}

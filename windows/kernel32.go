@@ -87,6 +87,59 @@ func getEnvironmentStrings(emu *WinEmulator, in *Instruction, wide bool) func(em
 
 }
 
+//HANDLE OpenFileMappingA(
+//DWORD  dwDesiredAccess,
+//BOOL   bInheritHandle,
+//LPCSTR lpName
+//);
+func openFileMapping(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	var path string
+	if wide == false {
+		path = util.ReadASCII(emu.Uc, in.Args[2], 0)
+	} else {
+		path = util.ReadWideChar(emu.Uc, in.Args[2], 0)
+	}
+
+	if handle, err := emu.OpenFile(path, int32(in.Args[0])); err == nil {
+		addr := emu.Heap.Malloc(in.Args[2])
+		emu.Handles[addr] = handle
+		return SkipFunctionStdCall(true, addr)
+	} else {
+		return SkipFunctionStdCall(true, 0xffffffff)
+	}
+}
+
+//LPVOID MapViewOfFile(
+//HANDLE hFileMappingObject,
+//DWORD  dwDesiredAccess,
+//DWORD  dwFileOffsetHigh,
+//DWORD  dwFileOffsetLow,
+//SIZE_T dwNumberOfBytesToMap
+//);
+
+//This is not the identical implementation, we can just return the file handle since it won't know.
+
+//func mapViewOfFile(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+//	var path string
+//
+//	//Check if the handle exists
+//	if _ , ok :=emu.Handles[in.Args[0]]; !ok{
+//		return SkipFunctionStdCall(true, 0)
+//	}
+//
+//	//find the address of this handle
+//	util.FindKey()
+//	if handle, err := emu.OpenFile(path, int32(in.Args[0])); err == nil {
+//		addr := emu.Heap.Malloc(in.Args[2])
+//		emu.Handles[addr] = handle
+//		return SkipFunctionStdCall(true, addr)
+//	} else {
+//		return SkipFunctionStdCall(true, 0xffffffff)
+//	}
+//}
+
+//Parameters: []string{"w:lpFileName", "dwDesiredAccess", "dwShareMode", "lpSecurityAttributes", "dwCreationDisposition", "dwFlagsAndAttributes", "hTemplateFile"},
+
 func createFile(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	var path string
 	if wide == false {
@@ -168,6 +221,11 @@ func loadLibrary(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmul
 			if _, ok := emu.libAddressFunction[name]; !ok {
 				emu.libAddressFunction[name] = make(map[uint64]string)
 			}
+			if _, ok := emu.libOrdinalFunction[name]; !ok {
+				emu.libOrdinalFunction[name] = make(map[uint16]string)
+			}
+
+			emu.libOrdinalFunction[name][funcs.Ordinal] = funcs.Name
 			emu.libFunctionAddress[name][funcs.Name] = realAddr
 			emu.libAddressFunction[name][realAddr] = funcs.Name
 		}
@@ -180,6 +238,23 @@ func loadLibrary(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmul
 		return SkipFunctionStdCall(true, pe.ImageBase())
 	}
 
+}
+
+func getProcAddress(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
+	name := util.ReadASCII(emu.Uc, in.Args[1], 0)
+	if dllname := emu.lookupLibByAddress(in.Args[0]); dllname != "" {
+		//The ordinal value might be given and not the function name.
+		if len(name) == 0 {
+			ordinalValue := in.Args[1]
+			name = emu.libOrdinalFunction[dllname][uint16(ordinalValue)]
+			addr := emu.libFunctionAddress[dllname][name]
+			return SkipFunctionStdCall(true, addr)
+		} else {
+			addr := emu.libFunctionAddress[dllname][name]
+			return SkipFunctionStdCall(true, addr)
+		}
+	}
+	return SkipFunctionStdCall(true, 0x0)
 }
 
 func KernelbaseHooks(emu *WinEmulator) {
@@ -418,12 +493,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "GetProcAddress", &Hook{
 		Parameters: []string{"hModule", "a:lpProcName"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
-			name := util.ReadASCII(emu.Uc, in.Args[1], 0)
-			if dllname := emu.lookupLibByAddress(in.Args[0]); dllname != "" {
-				addr := emu.libFunctionAddress[dllname][name]
-				return SkipFunctionStdCall(true, addr)(emu, in)
-			}
-			return SkipFunctionStdCall(true, 0x0)(emu, in)
+			return getProcAddress(emu, in)(emu, in)
 		},
 	})
 	emu.AddHook("", "GetStringTypeW", &Hook{
@@ -846,4 +916,20 @@ func KernelbaseHooks(emu *WinEmulator) {
 			}
 		},
 	})
+	emu.AddHook("", "OpenFileMappingA", &Hook{
+		Parameters: []string{"dwDesiredAccess", "bInheritHandle", "w:lpName"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return openFileMapping(emu, in, false)(emu, in)
+		},
+	})
+	emu.AddHook("", "OpenFileMappingW", &Hook{
+		Parameters: []string{"dwDesiredAccess", "bInheritHandle", "w:lpName"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return openFileMapping(emu, in, true)(emu, in)
+		},
+	})
+	emu.AddHook("", "MapViewOfFile", &Hook{
+		Parameters: []string{"hFileMappingObject", "dwDesiredAccess", "dwFileOffsetHigh", "dwFileOffsetLow", "dwNumberOfBytesToMap"},
+	})
+
 }

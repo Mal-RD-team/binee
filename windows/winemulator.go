@@ -80,6 +80,7 @@ type WinEmulator struct {
 	nameToHook         map[string]*Hook
 	libFunctionAddress map[string]map[string]uint64
 	libAddressFunction map[string]map[uint64]string
+	libOrdinalFunction map[string]map[uint16]string
 	libRealLib         map[string]string //set up in loader in loadLibs
 	EntryPoint         uint64
 	NextLibAddress     uint64
@@ -196,6 +197,7 @@ func LoadMem(pe *pefile.PeFile, path string, args []string, options *WinEmulator
 	emu.LoadedModules = make(map[string]uint64)
 	emu.libFunctionAddress = make(map[string]map[string]uint64)
 	emu.libAddressFunction = make(map[string]map[uint64]string)
+	emu.libOrdinalFunction = make(map[string]map[uint16]string)
 	emu.libRealLib = make(map[string]string)
 	emu.Handles = make(map[uint64]*Handle)
 	//this is the first thread
