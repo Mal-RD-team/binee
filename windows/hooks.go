@@ -156,6 +156,8 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 
 func HookInvalid(emu *WinEmulator) func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
 	return func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
+		fmt.Println(emu.CPU.ReadRegisters())
+		fmt.Println(access)
 		switch access {
 		case uc.MEM_WRITE, uc.MEM_WRITE_UNMAPPED, uc.MEM_WRITE_PROT:
 			fmt.Fprintf(os.Stderr, "Invalid Write: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
@@ -312,7 +314,7 @@ func (self *Instruction) ParseValues() {
 	}
 }
 
-// StringInstruction will print the instructino disassembly of the current EIP
+// StringInstruction will print the instruction disassembly of the current EIP
 // position
 func (i *Instruction) String() string {
 	return fmt.Sprintf("[%d] %s: %s", i.ThreadID, i.Address(), i.Disassemble())
@@ -342,7 +344,11 @@ func (i *Instruction) StringHook() string {
 			ret += fmt.Sprintf("%s = '%s'", i.Hook.Parameters[j][2:], s)
 		case "a:":
 			s := util.ReadASCII(i.emu.Uc, i.Args[j], 0)
-			ret += fmt.Sprintf("%s = '%s'", i.Hook.Parameters[j][2:], s)
+			if len(s) == 0 {
+				ret += fmt.Sprintf("%s = %d", i.Hook.Parameters[j][2:], i.Args[j])
+			} else {
+				ret += fmt.Sprintf("%s = '%s'", i.Hook.Parameters[j][2:], s)
+			}
 		case "v:":
 			ret += fmt.Sprintf("%s = %+v", i.Hook.Parameters[j][2:], i.Hook.Values[j])
 		case "s:":
