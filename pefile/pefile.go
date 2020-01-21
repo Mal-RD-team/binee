@@ -156,7 +156,7 @@ type Section struct {
 type ImportInfo struct {
 	DllName  string
 	FuncName string
-	Offset   uint64
+	Offset   uint32
 	Ordinal  uint16
 }
 
@@ -171,6 +171,7 @@ type PeFile struct {
 	PeType           PeType
 	Sections         []*Section
 	sectionHeaders   []*SectionHeader
+	HeadersAsSection *Section
 	Imports          []*ImportInfo
 	Exports          []*Export
 	ExportNameMap    map[string]*Export
@@ -408,6 +409,7 @@ func analyzePeFile(data []byte, pe *PeFile) error {
 	}
 
 	pe.RawHeaders = data[0:pe.Sections[0].Offset]
+	pe.HeadersAsSection = &Section{"HeadersSection", uint32(len(pe.RawHeaders)), 0, uint32(len(pe.RawHeaders)), 0, 0, 0, 0, 0, 0, pe.RawHeaders, 0}
 	pe.readImports()
 	if err = pe.readExports(); err != nil {
 		return err
@@ -537,30 +539,17 @@ type ImportDirectory struct {
 
 func (pe *PeFile) SetImportAddress(importInfo *ImportInfo, realAddr uint64) error {
 
-	var importsRva uint32
-	if pe.PeType == Pe32 {
-		importsRva = pe.OptionalHeader.(*OptionalHeader32).DataDirectories[1].VirtualAddress
-	} else {
-		importsRva = pe.OptionalHeader.(*OptionalHeader32P).DataDirectories[1].VirtualAddress
-	}
-	// get reference to Section holding the imports address table of this import.
-	//The offset of every import is not necessarily arranged properly, we have to get the correct address.
 	//TODO: The import info might be in a negative offset relative to import table(before it), needs to be handled.
-	currentImportRva := importsRva + uint32(importInfo.Offset)
-	section := pe.getSectionByRva(currentImportRva)
+	section := pe.getSectionByRva(importInfo.Offset)
 	if section == nil {
 		return fmt.Errorf("error setting address for %s.%s to %x, section not found", importInfo.DllName, importInfo.FuncName, importInfo.Offset)
 	}
-	importInfo.Offset -= uint64(section.VirtualAddress)
 
-	//fmt.Println(importInfo)
-	//fmt.Printf("0x%x\n", importInfo.Offset)
 	// update the Raw bytes with the new address
 	if pe.PeType == Pe32 {
 		buf := make([]byte, 4)
 		binary.LittleEndian.PutUint32(buf, uint32(realAddr))
-		thunkAddress := uint16(importInfo.Offset) & 0xfff
-		//fmt.Printf("0x%x\n", thunkAddress)
+		thunkAddress := importInfo.Offset - section.VirtualAddress
 		for i := 0; i < 4; i++ {
 			section.Raw[int(thunkAddress)+i] = buf[i]
 		}
@@ -591,6 +580,10 @@ func (pe *PeFile) ImportedDlls() []string {
 
 func (pe *PeFile) getSectionByRva(rva uint32) *Section {
 	var section *Section
+	//In the normal pe structure, headers is not a section, but some malwares may hide in and include from this.
+	if rva > 0 && rva < pe.HeadersAsSection.VirtualSize {
+		return pe.HeadersAsSection
+	}
 	for i := 0; i < int(pe.CoffHeader.NumberOfSections); i++ {
 		if rva >= pe.Sections[i].VirtualAddress && rva < pe.Sections[i].VirtualAddress+pe.Sections[i].Size {
 			section = pe.Sections[i]
@@ -639,25 +632,14 @@ func (pe *PeFile) readImports() {
 		if importDirectory.NameRva == 0 {
 			break
 		}
-		//In case the address is out of the section bounds
-		//the actual windows loader doesn't error, it moves to the next
-		//section as it treats it as a big array of raw data.
-		//This happens when the import table is crafted.
-		name := ""
-		if importDirectory.NameRva-section.VirtualAddress > section.Size {
-			requiredSection := pe.getSectionByRva(importDirectory.NameRva)
-			name = strings.ToLower(readString(requiredSection.Raw[importDirectory.NameRva-requiredSection.VirtualAddress:]))
-		} else {
-			name = strings.ToLower(readString(section.Raw[importDirectory.NameRva-section.VirtualAddress:]))
-		}
+
+		requiredSection := pe.getSectionByRva(importDirectory.NameRva)
+		name := strings.ToLower(readString(requiredSection.Raw[importDirectory.NameRva-requiredSection.VirtualAddress:]))
 
 		if pe.PeType == Pe32 {
 			var thunk1 uint32
 			section = pe.getSectionByRva(importDirectory.ImportAddressTableRva)
-			//I changed this since in setting the address, its done relative to the import address table.
-			//var thunk2 uint32 = importDirectory.ImportAddressTableRva - section.VirtualAddress
-			var thunk2 uint32 = importDirectory.ImportAddressTableRva - (pe.getSectionByRva(importsRva).VirtualAddress)
-
+			thunk2 := importDirectory.ImportAddressTableRva
 			importThunk := 0
 
 			// ImportLookupTableRva and ImportAddressTableRva are identical until the binary is actually loaded
@@ -677,19 +659,20 @@ func (pe *PeFile) readImports() {
 				if thunk1 = binary.LittleEndian.Uint32(section.Raw[importThunk : importThunk+4]); thunk1 == 0 {
 					break
 				}
-
-				if thunk1&0x80000000 > 0 {
+				//This would get the ordinal bit to check how to import
+				doOrdinal := thunk1&0x80000000 > 0
+				if doOrdinal {
 					// parse by ordinal
 					funcName := ""
 					ord := uint16(thunk1 & 0xffff)
-					pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, uint64(thunk2), ord})
+					pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, thunk2, ord})
 					thunk2 += 4
 				} else {
 					// might be in a different section
 					if sec := pe.getSectionByRva(thunk1 + 2); sec != nil {
 						v := thunk1 + 2 - sec.VirtualAddress
 						funcName := readString(sec.Raw[v:])
-						pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, uint64(thunk2), 0})
+						pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, thunk2, 0})
 						thunk2 += 4
 					}
 				}
@@ -709,14 +692,14 @@ func (pe *PeFile) readImports() {
 
 			for ; ; importThunk += 4 {
 				// get first thunk
-				if thunk1 = binary.LittleEndian.Uint64(section.Raw[uint64(importThunk) : uint64(importThunk)+8]); thunk1 == 0 {
+				if thunk1 = binary.LittleEndian.Uint64(section.Raw[uint32(importThunk) : uint32(importThunk)+8]); thunk1 == 0 {
 					break
 				}
 				if thunk1&0x8000000000000000 > 0 {
 					// parse by ordinal
 					funcName := ""
 					ord := uint16(thunk1 & 0xffff)
-					pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, uint64(thunk2), ord})
+					pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, uint32(thunk2), ord})
 					thunk2 += 8
 
 				} else {
@@ -724,7 +707,7 @@ func (pe *PeFile) readImports() {
 					if sec := pe.getSectionByRva(uint32(thunk1) + 2); sec != nil {
 						v := uint32(thunk1) + 2 - sec.VirtualAddress
 						funcName := readString(sec.Raw[v:])
-						pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, uint64(thunk2), 0})
+						pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, uint32(thunk2), 0})
 						thunk2 += 8
 					}
 				}

@@ -48,6 +48,7 @@ func (emu *WinEmulator) LoadHooks() {
 	UtilapiHooks(emu)
 	ShlobjCoreHooks(emu)
 	MemoryApiHooks(emu)
+	Internal(emu)
 }
 func (emu *WinEmulator) SetupHooks() error {
 	emu.Uc.HookAdd(uc.HOOK_CODE, HookCode(emu), 1, 0)
@@ -89,7 +90,6 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 
 		// capture next address, if cur address is a function call, next address is the ret address
 		instruction := emu.BuildInstruction(addr, size)
-
 		doContinue := instruction.Hook.Fn(emu, instruction)
 
 		var returns uint64
@@ -157,7 +157,6 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 func HookInvalid(emu *WinEmulator) func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
 	return func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
 		fmt.Println(emu.CPU.ReadRegisters())
-		fmt.Println(access)
 		switch access {
 		case uc.MEM_WRITE, uc.MEM_WRITE_UNMAPPED, uc.MEM_WRITE_PROT:
 			fmt.Fprintf(os.Stderr, "Invalid Write: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)

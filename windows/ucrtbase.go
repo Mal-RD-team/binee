@@ -11,7 +11,10 @@ import (
 
 func UcrtBase32Hooks(emu *WinEmulator) {
 	emu.AddHook("", "__acrt_iob_func", &Hook{Parameters: []string{}})
-	emu.AddHook("", "_controlfp", &Hook{Parameters: []string{"unNew", "unMask"}})
+	emu.AddHook("", "_controlfp", &Hook{
+		Parameters: []string{"unNew", "unMask"},
+		Fn:         SkipFunctionCdecl(true, 0),
+	})
 	emu.AddHook("", "__dllonexit", &Hook{Parameters: []string{"func", "pbegin", "pend"}})
 	emu.AddHook("", "__stdio_common_vfprintf", &Hook{
 		Parameters: []string{"stream", "_:", "_:", "a:format"},
@@ -88,6 +91,10 @@ func UcrtBase32Hooks(emu *WinEmulator) {
 			addr := emu.Heap.Malloc(in.Args[0])
 			return SkipFunctionCdecl(true, addr)(emu, in)
 		},
+	})
+	emu.AddHook("", "puts", &Hook{
+		Parameters: []string{"a:str"},
+		Fn:         SkipFunctionCdecl(true, 0),
 	})
 
 	emu.AddHook("", "_msize", &Hook{

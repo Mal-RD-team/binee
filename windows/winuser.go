@@ -1,11 +1,33 @@
 package windows
 
 func WinuserHooks(emu *WinEmulator) {
+
+	//LPSTR CharNextA(
+	//	LPCSTR lpsz
+	//);
 	emu.AddHook("", "CharNextA", &Hook{
-		Parameters: []string{"lpsz"},
+		Parameters: []string{"a:lpsz"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			lpsz := in.Args[0]
+			buffer, _ := emu.Uc.MemRead(lpsz, 1)
+			if buffer[0] == 0 {
+				return SkipFunctionStdCall(true, lpsz)(emu, in)
+			}
+			return SkipFunctionStdCall(true, lpsz+1)(emu, in)
+		},
 	})
+	//Currently only handling single byte characters
 	emu.AddHook("", "CharPrevA", &Hook{
-		Parameters: []string{"lpszStart", "lpszCurrent"},
+		Parameters: []string{"a:lpszStart", "a:lpszCurrent"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			lpszStart := in.Args[0]
+			lpszCurrent := in.Args[1]
+			if lpszStart == lpszCurrent {
+				return SkipFunctionStdCall(true, lpszStart)(emu, in)
+			} else {
+				return SkipFunctionStdCall(true, lpszCurrent-1)(emu, in)
+			}
+		},
 	})
 	emu.AddHook("", "DestroyWindow", &Hook{
 		Parameters: []string{"hWnd"},
@@ -107,6 +129,10 @@ func WinuserHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "RegisterWindowMessageA", &Hook{
 		Parameters: []string{"a:lpString"},
+		Fn:         SkipFunctionStdCall(true, 0xC001),
+	})
+	emu.AddHook("", "GetDesktopWindow", &Hook{
+		Parameters: []string{},
 		Fn:         SkipFunctionStdCall(true, 0xC001),
 	})
 	emu.AddHook("", "RegisterWindowMessageW", &Hook{

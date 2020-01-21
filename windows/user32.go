@@ -14,6 +14,15 @@ func User32Hooks(emu *WinEmulator) {
 	emu.AddHook("", "wsprintfA", &Hook{
 		Parameters: []string{"lpstr", "a:lpcstr"},
 	})
+	emu.AddHook("", "LoadBitmapA", &Hook{
+		Parameters: []string{"hInstance", "a:lpBitmapName"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
+	emu.AddHook("", "DialogBoxParamA", &Hook{
+		Parameters: []string{"hInstance", "a:lpTemplateName", "hWndParent", "lpDialogFunc", "dwInitParam"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
+
 	emu.AddHook("", "wvsprintfA", &Hook{
 		Parameters: []string{"lpstr", "a:lpcstr", "arglist"},
 	})
