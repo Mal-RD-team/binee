@@ -875,8 +875,6 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 				realAddr := uint64(importedDll.ExportNameMap[importInfo.FuncName].Rva) + importedDll.ImageBase()
 				dll.SetImportAddress(importInfo, realAddr)
 			} else {
-				// make sure the ordinal exists before deref'ing it
-				// this is likely a bug in the way the pefile parser handles export ordinals
 				if _, ok := importedDll.ExportOrdinalMap[int(importInfo.Ordinal)]; ok {
 					realAddr := uint64(importedDll.ExportOrdinalMap[int(importInfo.Ordinal)].Rva) + importedDll.ImageBase()
 					dll.SetImportAddress(importInfo, realAddr)

@@ -2,6 +2,7 @@ package windows
 
 import (
 	"encoding/binary"
+	"fmt"
 	"github.com/carbonblack/binee/pefile"
 )
 
@@ -20,7 +21,13 @@ func loadString(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmula
 		if dataEntry == nil {
 			return SkipFunctionStdCall(true, 0)
 		}
-		offset := uint64(dataEntry.OffsetToData) + emu.MemRegions.ImageAddress + (stringNum * 2) //stringNum is multiplied by 2 because its wide chars.
+		bytes, _ := emu.Uc.MemRead(uint64(dataEntry.OffsetToData)+emu.MemRegions.ImageAddress, uint64(dataEntry.Size))
+		index := uint64(0)
+		//The weird operation to get the offset
+		for i := uint64(0); i < stringNum; i++ {
+			index += (uint64(binary.LittleEndian.Uint16(bytes[index:index+2])) + 1) * 2
+		}
+		offset := uint64(dataEntry.OffsetToData) + emu.MemRegions.ImageAddress + index //stringNum is multiplied by 2 because its wide chars.
 
 		if in.Args[3] == 0 {
 			addr := make([]byte, 4)
@@ -37,6 +44,7 @@ func loadString(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmula
 				if ok == nil {
 					if !wide {
 						actualString := pefile.WideStringToString(bytes, int(length*2))
+						fmt.Println(actualString)
 						emu.Uc.MemWrite(in.Args[2], []byte(actualString))
 						emu.Uc.MemWrite(in.Args[2]+length, []byte{0}) //Write null byte
 					} else {
