@@ -45,6 +45,32 @@ func allocateVirtualMemory(emu *WinEmulator, in *Instruction) bool {
 	return SkipFunctionStdCall(true, 0x0)(emu, in)
 }
 
+func freeVirtualMemory(emu *WinEmulator, in *Instruction) bool {
+	// Get the pointers
+	baseAddr := in.Args[1]
+	sizePtr := in.Args[2]
+
+	// Get the values at those pointers
+	sizeBytes, _ := emu.Uc.MemRead(sizePtr, emu.PtrSize)
+	startBytes, _ := emu.Uc.MemRead(baseAddr, emu.PtrSize)
+
+	// Convert to uint64
+	size := uint64(0)
+	start := uint64(0)
+	if emu.UcMode == uc.MODE_32 {
+		size = uint64(binary.LittleEndian.Uint32(sizeBytes))
+		start = uint64(binary.LittleEndian.Uint32(startBytes))
+	} else {
+		size = binary.LittleEndian.Uint64(sizeBytes)
+		start = binary.LittleEndian.Uint64(startBytes)
+	}
+
+	if size == 0 && emu.Heap.Free(start) == 1 {
+		return SkipFunctionStdCall(true, 0x0)(emu, in)
+	}
+	return SkipFunctionStdCall(true, 0x1)(emu, in)
+}
+
 //NTSYSAPI NTSTATUS ZwMapViewOfSection(
 //  HANDLE          SectionHandle,
 //  HANDLE          ProcessHandle,
@@ -126,6 +152,10 @@ func NtdllHooks(emu *WinEmulator) {
 	emu.AddHook("", "NtAllocateVirtualMemory", &Hook{
 		Parameters: []string{"ProcessHandle", "BaseAddress", "ZeroBits", "RegionSize", "AllocationType", "Protect"},
 		Fn:         allocateVirtualMemory,
+	})
+	emu.AddHook("", "ZwFreeVirtualMemory", &Hook{
+		Parameters: []string{"ProcessHandle", "BaseAddress", "RegionSize", "FreeType"},
+		Fn:         freeVirtualMemory,
 	})
 
 	// https://googleprojectzero.blogspot.com/2017/08/windows-exploitation-tricks-arbitrary.html
