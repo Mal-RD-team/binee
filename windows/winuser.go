@@ -115,6 +115,7 @@ func WinuserHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "GetSystemMetrics", &Hook{
 		Parameters: []string{"nIndex"},
+		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
 	emu.AddHook("", "LoadAcceleratorsA", &Hook{
 		Parameters: []string{"hInstance", "a:lpTableName"},
