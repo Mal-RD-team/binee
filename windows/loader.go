@@ -541,9 +541,9 @@ func (emu *WinEmulator) initPEB(pe *pefile.PeFile) uint64 {
 	peb.OsMajorVersion = int32(emu.Opts.OsMajorVersion)
 	peb.OsMinorVersion = int32(emu.Opts.OsMinorVersion)
 	peb.ImageBaseAddress = uint32(pe.ImageBase())
-	//peb.ReadOnlySharedMemoryBase = uint32(emu.Heap.Malloc(4096))
-	//peb.ReadOnlyStaticServerData = peb.ReadOnlySharedMemoryBase + 0x4b0
-	//peb.CsrServerReadOnlySharedMemoryBase = emu.Heap.Malloc(4096)
+	peb.ReadOnlySharedMemoryBase = uint32(emu.Heap.Malloc(4096))
+	peb.ReadOnlyStaticServerData = peb.ReadOnlySharedMemoryBase + 0x4b0
+	peb.CsrServerReadOnlySharedMemoryBase = emu.Heap.Malloc(4096)
 	peb.Ldr = uint32(pebLdrAddress)
 	pebBuf := new(bytes.Buffer)
 	binary.Write(pebBuf, binary.LittleEndian, &peb)
@@ -908,6 +908,7 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 			dll := peMap[name]
 			if !strings.HasPrefix(name, "api") && !strings.HasPrefix(name, "kernelbase") && !strings.HasPrefix(name, "ucrt") {
 				if dll.EntryPoint() != 0 {
+					fmt.Println(dll.Name)
 					emu.setupDllMainCallstack(dll)
 				}
 			}

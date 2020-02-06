@@ -140,6 +140,23 @@ func openFileMapping(emu *WinEmulator, in *Instruction, wide bool) func(emu *Win
 
 //Parameters: []string{"w:lpFileName", "dwDesiredAccess", "dwShareMode", "lpSecurityAttributes", "dwCreationDisposition", "dwFlagsAndAttributes", "hTemplateFile"},
 
+//func FindResource(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+//	//Check first if there was a name or an id.
+//	//We will depend on the function, which is a hacky method.
+//	//This function returns an empty string when no access occurs
+//	//which will be the case  here in case of id (lower word).
+//	handle:=emu.Handles[in.Args[0]]
+//
+//	var name string
+//	if wide == false {
+//		name = util.ReadASCII(emu.Uc, in.Args[1], 0)
+//	} else {
+//		name = util.ReadWideChar(emu.Uc, in.Args[1], 0)
+//	}
+//
+//
+//}
+
 func createFile(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	var path string
 	if wide == false {
@@ -201,7 +218,7 @@ func loadLibrary(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmul
 	} else {
 		pe.SetImageBase(emu.NextLibAddress)
 		emu.LoadedModules[name] = emu.NextLibAddress
-
+		//We have to set import address here
 		err = emu.Uc.MemWrite(pe.ImageBase(), pe.RawHeaders)
 		for i := 0; i < len(pe.Sections); i++ {
 			err = emu.Uc.MemWrite(pe.ImageBase()+uint64(pe.Sections[i].VirtualAddress), pe.Sections[i].Raw)
@@ -275,7 +292,23 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return createFile(emu, in, true)(emu, in)
 		},
 	})
-
+	//HRSRC FindResourceA(
+	//  HMODULE hModule,
+	//  LPCSTR  lpName,
+	//  LPCSTR  lpType
+	//);
+	//emu.AddHook("","FindResourceA",&Hook{
+	//	Parameters:[]string{"hModule","a:lpName","a:lpType"},
+	//	Fn: func(emu *WinEmulator,in *Instruction) bool{
+	//		return FindResource(emu,in,false)(emu,in)
+	//	},
+	//})
+	//emu.AddHook("","FindResourceW",&Hook{
+	//	Parameters:[]string{"hModule","a:lpName","a:lpType"},
+	//	Fn: func(emu *WinEmulator,in *Instruction) bool{
+	//		return FindResource(emu,in,false)(emu,in)
+	//	},
+	//})
 	emu.AddHook("", "DeleteCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
@@ -887,7 +920,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "GetCPFileNameFromRegistry", &Hook{Parameters: []string{"CodePage", "w:FileName", "FileNameSize"}})
 	emu.AddHook("", "LocalFree", &Hook{Parameters: []string{"hMem"}})
 	emu.AddHook("", "MultiByteToWideChar", &Hook{
-		Parameters: []string{"CodePage", "dwFlags", "a:lpMultiByteStr", "cbMultiByte", "lpWideCharStr", "cchWideChar"},
+		Parameters: []string{"CodePage", "dwFlags", "lpMultiByteStr", "cbMultiByte", "lpWideCharStr", "cchWideChar"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			mb := util.ReadASCII(emu.Uc, in.Args[2], 0)
 

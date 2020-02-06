@@ -22,4 +22,7 @@ func Internal(emu *WinEmulator) {
 		Parameters: []string{"_Argc", "_Argv", "_Env", "_DoWildCard", "_StartInfo"},
 		Fn:         SkipFunctionCdecl(true, 0),
 	})
+	emu.AddHook("", "UserClientDllInitialize", &Hook{
+		Parameters: []string{},
+	})
 }

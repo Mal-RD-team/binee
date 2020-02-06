@@ -91,6 +91,17 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 		// capture next address, if cur address is a function call, next address is the ret address
 		instruction := emu.BuildInstruction(addr, size)
 		doContinue := instruction.Hook.Fn(emu, instruction)
+		//strInstr:=instruction.String()
+		////Hot patch to the anti-emulation trick
+		//if strings.Contains(strInstr,"rep"){
+		//
+		//	if emu.UcMode==uc.MODE_32 {
+		//		ecx, _ := emu.Uc.RegRead(uc.X86_REG_ECX)
+		//		if int32(ecx) < 0 {
+		//			emu.Uc.RegWrite(uc.X86_REG_ECX, 1)
+		//		}
+		//	}
+		//}
 
 		var returns uint64
 		if emu.UcMode == uc.MODE_32 {
@@ -164,6 +175,7 @@ func HookInvalid(emu *WinEmulator) func(mu uc.Unicorn, access int, addr uint64, 
 			fmt.Fprintf(os.Stderr, "Invalid Read: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
 		case uc.MEM_FETCH, uc.MEM_FETCH_UNMAPPED, uc.MEM_FETCH_PROT:
 			fmt.Fprintf(os.Stderr, "Invalid Fetch: addresss = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
+			fmt.Println(mu.MemRead(0x041E58C, 4))
 		default:
 			fmt.Fprintf(os.Stderr, "unknown memory error: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
 		}

@@ -1,5 +1,67 @@
 package windows
 
+import (
+	"encoding/binary"
+	"github.com/carbonblack/binee/pefile"
+)
+
+//nt LoadStringA(
+//  HINSTANCE hInstance,
+//  UINT      uID,
+//  LPSTR     lpBuffer,
+//  int       cchBufferMax
+//);
+func loadString(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	if in.Args[0] == emu.MemRegions.ImageAddress {
+		resourceID := uint32(((in.Args[1] & 0xFFFF) >> 4) + 1)
+		typeID := uint32(6) //An enum should be added
+		dataEntry := pefile.FindResource(emu.ResourcesRoot, resourceID, typeID)
+		stringNum := in.Args[1] & 0x000f
+		if dataEntry == nil {
+			return SkipFunctionStdCall(true, 0)
+		}
+		offset := uint64(dataEntry.OffsetToData) + emu.MemRegions.ImageAddress + (stringNum * 2) //stringNum is multiplied by 2 because its wide chars.
+
+		if in.Args[3] == 0 {
+			addr := make([]byte, 4)
+			//TODO Enums should be added to represent size of data types.
+			binary.LittleEndian.PutUint32(addr, uint32(offset+2))
+			emu.Uc.MemWrite(in.Args[2], addr)
+
+		}
+		bytes, ok := emu.Uc.MemRead(offset, uint64(2))
+		length := uint64(binary.LittleEndian.Uint16(bytes))
+		if in.Args[3] > length {
+			if ok == nil {
+				bytes, ok = emu.Uc.MemRead(offset+2, length*2) //Multiplied by 2 because its a unicode string.
+				if ok == nil {
+					if !wide {
+						actualString := pefile.WideStringToString(bytes, int(length*2))
+						emu.Uc.MemWrite(in.Args[2], []byte(actualString))
+						emu.Uc.MemWrite(in.Args[2]+length, []byte{0}) //Write null byte
+					} else {
+						emu.Uc.MemWrite(in.Args[2], bytes)
+						emu.Uc.MemWrite(in.Args[2]+(2*length), []byte{0}) //Write null byte
+					}
+					return SkipFunctionStdCall(true, length)
+				}
+			}
+
+		} else {
+			bytes, ok := emu.Uc.MemRead(offset, in.Args[3])
+			if ok != nil {
+				emu.Uc.MemWrite(in.Args[2], bytes)
+				return SkipFunctionStdCall(true, in.Args[3])
+			}
+		}
+	} else {
+
+		//This should be handled too
+		//Loading for another module
+
+	}
+	return SkipFunctionStdCall(true, 0)
+}
 func WinuserHooks(emu *WinEmulator) {
 
 	//LPSTR CharNextA(
@@ -98,7 +160,15 @@ func WinuserHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "LoadStringA", &Hook{
 		Parameters: []string{"hInstance", "uID", "lpBuffer", "cchBufferMax"},
-		Fn:         SkipFunctionStdCall(true, 0x1),
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return loadString(emu, in, false)(emu, in)
+		},
+	})
+	emu.AddHook("", "LoadStringW", &Hook{
+		Parameters: []string{"hInstance", "uID", "lpBuffer", "cchBufferMax"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return loadString(emu, in, true)(emu, in)
+		},
 	})
 	emu.AddHook("", "MapVirtualKeyW", &Hook{
 		Parameters: []string{"uCode", "uMapType"},

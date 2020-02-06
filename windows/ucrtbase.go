@@ -192,4 +192,12 @@ func UcrtBase32Hooks(emu *WinEmulator) {
 			return SkipFunctionCdecl(true, curTime)(emu, in)
 		},
 	})
+	emu.AddHook("", "_o__initialize_onexit_table", &Hook{
+		Parameters: []string{"tableptr"},
+	})
+	//void qsort (void* base, size_t num, size_t size,
+	//	int (*comparator)(const void*,const void*));
+	emu.AddHook("", "qsort", &Hook{
+		Parameters: []string{"base", "num", "size", "comparatorFn"},
+	})
 }

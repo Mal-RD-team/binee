@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-
+	///Users/mohamedahmedabdelmonim/GolandProjects/binee/os/win10_32/
 	isAPISetLookup := flag.String("a", "", "get the real dll name from an apiset name")
 	listAllAPISets := flag.Bool("A", false, "list all apisets and their mappings")
 	showDLL := flag.Bool("d", false, "show the dll prfix on all function calls")

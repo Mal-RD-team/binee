@@ -45,6 +45,35 @@ func allocateVirtualMemory(emu *WinEmulator, in *Instruction) bool {
 	return SkipFunctionStdCall(true, 0x0)(emu, in)
 }
 
+//NTSYSAPI NTSTATUS ZwMapViewOfSection(
+//  HANDLE          SectionHandle,
+//  HANDLE          ProcessHandle,
+//  PVOID           *BaseAddress,
+//  ULONG_PTR       ZeroBits,
+//  SIZE_T          CommitSize,
+//  PLARGE_INTEGER  SectionOffset,
+//  PSIZE_T         ViewSize,
+//  SECTION_INHERIT InheritDisposition,
+//  ULONG           AllocationType,
+//  ULONG           Win32Protect
+//);
+func zwMapViewOfSection(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
+	//Doesnt support  other process yet.
+	//if in.Args[1]!=0xFFFFFFFF {
+	//	return SkipFunctionStdCall(true,STATUS_SUCCESS)
+	//}
+	if emu.PtrSize == 4 {
+		buf := make([]byte, 4)
+		pointerToVar := in.Args[2]
+		//write pointer value
+		//ptr := emu.Malloc(emu.PtrSize)
+		binary.LittleEndian.PutUint32(buf, uint32(in.Args[0]))
+		emu.Uc.MemWrite(pointerToVar, buf)
+	} else {
+	}
+	return SkipFunctionStdCall(true, STATUS_SUCCESS)
+
+}
 func NtdllHooks(emu *WinEmulator) {
 	hRtlSetThreadPoolStartFunc := &Hook{
 		Parameters: []string{"StartPoolThread", "ExitPoolThread"},
@@ -55,6 +84,17 @@ func NtdllHooks(emu *WinEmulator) {
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			return SkipFunctionStdCall(true, in.Args[0]>>in.Args[1])(emu, in)
 		},
+	})
+	//BOOL SetProtectedPolicy(
+	//	LPCGUID    PolicyGuid,
+	//	ULONG_PTR  PolicyValue,
+	//	PULONG_PTR OldPolicyValue
+	//);
+	emu.AddHook("", "RtlSetProtectedPolicy", &Hook{
+		Parameters: []string{"PolicyGuid", "PolicyValue", "OldPolicyValue"},
+	})
+	emu.AddHook("", "LdrControlFlowGuardEnforced", &Hook{
+		Parameters: []string{""},
 	})
 	emu.AddHook("", "ApiSetQueryApiSetPresence", &Hook{
 		Parameters: []string{"Namespace", "Present"},
@@ -181,6 +221,9 @@ func NtdllHooks(emu *WinEmulator) {
 	emu.AddHook("", "RtlInitializeCriticalSectionAndSpinCount", &Hook{
 		Parameters: []string{"lpCriticalSection", "dwSpinCount"},
 	})
+	emu.AddHook("", "RtlInitializeCriticalSection", &Hook{
+		Parameters: []string{"lpCriticalSection"},
+	})
 	emu.AddHook("", "RtlInitializeCriticalSectionEx", &Hook{
 		Parameters: []string{"lpCriticalSection", "dwSpinCount", "flags"},
 	})
@@ -198,6 +241,12 @@ func NtdllHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "RtlNtStatusToDosError", &Hook{
 		Parameters: []string{"Status"},
+	})
+	emu.AddHook("", "RtlInitializeNtUserPfn", &Hook{
+		Parameters: []string{},
+	})
+	emu.AddHook("", "RtlEncodePointer", &Hook{
+		Parameters: []string{"ptr"},
 	})
 	emu.AddHook("", "RtlNtStatusToDosErrorNoTeb", &Hook{
 		Parameters: []string{"Status"},
@@ -243,6 +292,9 @@ func NtdllHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "ZwMapViewOfSection", &Hook{
 		Parameters: []string{"SectionHandle", "ProcessHandle", "BaseAddress", "ZeroBits", "CommitSize", "SectionOffset", "ViewSize", "InheritDisposition", "AllocationType", "Win32Protect"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return zwMapViewOfSection(emu, in)(emu, in)
+		},
 	})
 	emu.AddHook("", "ZwOpenKey", &Hook{
 		Parameters: []string{"KeyHandle", "DesiredAccess", "ObjectAttributes"},
