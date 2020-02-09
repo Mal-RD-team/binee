@@ -954,9 +954,11 @@ func (pe *PeFile) readResources() error {
 	} else {
 		resourcesRVA = pe.OptionalHeader.(*OptionalHeader32P).DataDirectories[2].VirtualAddress
 	}
-
-	if pe.ResourceDirectoryRoot, err = pe.readDirectoryRecursively(resourcesRVA, resourcesRVA, 0); err != nil {
-		return err
+	
+	if resourcesRVA != 0 {
+		if pe.ResourceDirectoryRoot, err = pe.readDirectoryRecursively(resourcesRVA, resourcesRVA, 0); err != nil {
+			return err
+		}
 	}
 	//pe.findResource("DVCLAL",uint32(10))
 	return nil
