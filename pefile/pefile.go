@@ -9,6 +9,8 @@ import (
 	"log"
 	"math"
 	"os"
+	"strconv"
+
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -176,6 +178,7 @@ type PeFile struct {
 	Exports               []*Export
 	ExportNameMap         map[string]*Export
 	ExportOrdinalMap      map[int]*Export
+	ForwardedExports      map[string]ForwardedExport
 	Apisets               map[string][]string
 	Size                  int64
 	RawHeaders            []byte
@@ -416,6 +419,7 @@ func analyzePeFile(data []byte, pe *PeFile) error {
 	if err = pe.readExports(); err != nil {
 		return err
 	}
+
 	pe.readApiset()
 	pe.readResources()
 	return nil
@@ -443,9 +447,17 @@ type ExportDirectory struct {
 	OrdinalsRva          uint32
 }
 
+//https://docs.microsoft.com/en-us/windows/win32/debug/pe-format#export-address-table
+//the DLL's name and the export ordinal, like "otherdll.#19".
+//http://www.pelib.com/resources/luevel.txt
+type ForwardedExport struct {
+	DllName  string
+	FuncName string
+	Ordinal  uint16
+}
+
 type ExportAddressTable struct {
-	ExportRva  uint32
-	ForwardRva uint32
+	Rva uint32 //This might be a forward rva or rva to export entry.
 }
 
 type Export struct {
@@ -456,12 +468,14 @@ type Export struct {
 
 func (pe *PeFile) readExports() error {
 	var exportsRva uint32
+	var size uint32
 	if pe.PeType == Pe32 {
 		exportsRva = pe.OptionalHeader.(*OptionalHeader32).DataDirectories[0].VirtualAddress
+		size = pe.OptionalHeader.(*OptionalHeader32).DataDirectories[0].Size
 	} else {
 		exportsRva = pe.OptionalHeader.(*OptionalHeader32P).DataDirectories[0].VirtualAddress
+		size = pe.OptionalHeader.(*OptionalHeader32P).DataDirectories[0].Size
 	}
-
 	//get the section with exports data
 	section := pe.getSectionByRva(exportsRva)
 
@@ -491,7 +505,7 @@ func (pe *PeFile) readExports() error {
 
 	pe.ExportNameMap = make(map[string]*Export)
 	pe.ExportOrdinalMap = make(map[int]*Export)
-
+	pe.ForwardedExports = make(map[string]ForwardedExport)
 	for i := 0; i < int(exportDirectory.NumberOfNamePointers); i++ {
 		// seek to index in names table
 		if _, err := r.Seek(int64(namesTableRVA+uint32(i*4)), io.SeekStart); err != nil {
@@ -503,7 +517,7 @@ func (pe *PeFile) readExports() error {
 			return fmt.Errorf("Error retrieving %s exports address table: %v", pe.Path, err)
 		}
 
-		name := readString(section.Raw[exportAddressTable.ExportRva-section.VirtualAddress:])
+		name := readString(section.Raw[exportAddressTable.Rva-section.VirtualAddress:])
 
 		// get first Name in array
 		ordinal = binary.LittleEndian.Uint16(section.Raw[ordinalsTableRVA+uint32(i*2) : ordinalsTableRVA+uint32(i*2)+2])
@@ -519,8 +533,31 @@ func (pe *PeFile) readExports() error {
 			return fmt.Errorf("Error retrieving %s ordinals table: %v", pe.Path, err)
 		}
 
-		rva := exportOrdinalTable.ExportRva
+		rva := exportOrdinalTable.Rva
+		//Check whether its forwarded or not
+		if rva < exportsRva+size && rva > exportsRva {
+			//Its in the range of exports, its forwarded.
+			if _, err := r.Seek(int64(rva-exportsRva), io.SeekStart); err != nil {
+				return fmt.Errorf("Error seeking forwarded name for exports names table: %v", err)
+			}
+			forwardedExportRaw := readString(section.Raw[rva-section.VirtualAddress:])
+			split := strings.Split(forwardedExportRaw, ".")
+			ordinalNum := 0
+			funcName := ""
+			var err error
+			if split[1][0] == '#' {
+				numStr := split[1][1:]
+				if ordinalNum, err = strconv.Atoi(numStr); err != nil {
+					return err
+				}
+			} else {
+				funcName = split[1]
 
+			}
+			forwardedExport := ForwardedExport{strings.ToLower(split[0]), funcName, uint16(ordinalNum)}
+			pe.ForwardedExports[name] = forwardedExport
+			continue
+		}
 		export := &Export{name, ordinal + uint16(exportDirectory.OrdinalBase), rva}
 		pe.Exports = append(pe.Exports, export)
 		pe.ExportNameMap[name] = export
@@ -954,7 +991,7 @@ func (pe *PeFile) readResources() error {
 	} else {
 		resourcesRVA = pe.OptionalHeader.(*OptionalHeader32P).DataDirectories[2].VirtualAddress
 	}
-	
+
 	if resourcesRVA != 0 {
 		if pe.ResourceDirectoryRoot, err = pe.readDirectoryRecursively(resourcesRVA, resourcesRVA, 0); err != nil {
 			return err

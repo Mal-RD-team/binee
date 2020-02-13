@@ -106,9 +106,22 @@ func main() {
 
 	// print the binaries export table
 	if *listExports {
-		if pe, err := pefile.LoadPeFile(flag.Arg(0)); err == nil {
-			for _, export := range pe.Exports {
-				fmt.Println(export.Name)
+		pe, err := pefile.LoadPeFile(flag.Arg(0))
+		if err != nil {
+			return
+		}
+		for _, export := range pe.Exports {
+			fmt.Println(export.Name)
+		}
+		if len(pe.ForwardedExports) > 0 {
+			fmt.Println("------------------------------------------------------")
+			fmt.Println("FORWARDED EXPORTS")
+			for FncName, ExportedTo := range pe.ForwardedExports {
+				if ExportedTo.FuncName != "" {
+					fmt.Printf("%s ---> %s in [%s]\n", FncName, ExportedTo.FuncName, ExportedTo.DllName)
+				} else {
+					fmt.Printf("%s ---> Number%d in [%s]\n", FncName, ExportedTo.Ordinal, ExportedTo.DllName)
+				}
 			}
 		}
 		return

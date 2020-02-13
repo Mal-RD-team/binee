@@ -629,6 +629,11 @@ func (emu *WinEmulator) initGdt(pe *pefile.PeFile) error {
 		tib.StackBaseHigh = uint32(emu.MemRegions.StackAddress)
 		tib.StackLimit = uint32(emu.MemRegions.StackAddress - emu.MemRegions.StackSize)
 		tib.LinearAddressOfTEB = uint32(emu.MemRegions.TibAddress)
+		tib.AddressOfThreadLocalStorage = uint32(emu.Heap.Malloc(4096))
+		TLSaddress := make([]byte, 4)
+		TLSaddressPointer := emu.Heap.Malloc(4096)
+		binary.LittleEndian.PutUint32(TLSaddress, uint32(TLSaddressPointer))
+		emu.Uc.MemWrite(uint64(tib.AddressOfThreadLocalStorage), TLSaddress)
 		//check this one above, might not be right
 		tib.CurrentLocale = uint32(emu.Opts.CurrentLocale)
 		tib.AddressOfPEB = uint32(pebAddress)
@@ -848,12 +853,33 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 
 	// update the imports table for the current PE so that imports resolve correctly
 	for _, importInfo := range pe.Imports {
-		dll := peMap[importInfo.DllName]
+		dllName := importInfo.DllName
+		dll := peMap[dllName]
+		funcName := importInfo.FuncName
 		if dll == nil {
 			continue
 		}
+		//Checking if forwarded export, keep looping until we find the func
 
-		realAddr := uint64(dll.ExportNameMap[importInfo.FuncName].Rva) + dll.ImageBase()
+		if val, ok := dll.ForwardedExports[funcName]; ok {
+			dllName = val.DllName + ".dll"
+			funcName = val.FuncName
+			for true {
+				//the function we are going to is not forwarded anywhere.
+				//We still have to handle ordinals
+				if funcName == "" {
+					break
+				}
+				if _, ok := peMap[dllName].ForwardedExports[funcName]; !ok {
+					break
+				}
+				dllName = peMap[dllName].ForwardedExports[funcName].DllName + ".dll"
+				funcName = peMap[dllName].ForwardedExports[funcName].FuncName
+			}
+		}
+		dll = peMap[dllName]
+
+		realAddr := uint64(dll.ExportNameMap[funcName].Rva) + dll.ImageBase()
 		pe.SetImportAddress(importInfo, realAddr)
 	}
 
@@ -872,7 +898,30 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 			}
 
 			if importInfo.FuncName != "" {
-				realAddr := uint64(importedDll.ExportNameMap[importInfo.FuncName].Rva) + importedDll.ImageBase()
+				funcName := importInfo.FuncName
+				dllName := importInfo.DllName
+				importFrom := peMap[dllName]
+				if importFrom == nil {
+					continue
+				}
+				if val, ok := importFrom.ForwardedExports[funcName]; ok {
+					dllName = val.DllName + ".dll"
+					funcName = val.FuncName
+					for true {
+						//the function we are going to is not forwarded anywhere.
+						//We still have to handle ordinals
+						if funcName == "" {
+							break
+						}
+						if _, ok := peMap[dllName].ForwardedExports[funcName]; !ok {
+							break
+						}
+						dllName = peMap[dllName].ForwardedExports[funcName].DllName + ".dll"
+						funcName = peMap[dllName].ForwardedExports[funcName].FuncName
+					}
+				}
+				importFrom = peMap[dllName]
+				realAddr := uint64(importFrom.ExportNameMap[funcName].Rva) + importFrom.ImageBase()
 				dll.SetImportAddress(importInfo, realAddr)
 			} else {
 				if _, ok := importedDll.ExportOrdinalMap[int(importInfo.Ordinal)]; ok {
@@ -904,7 +953,7 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 		for i := len(ldrList) - 1; i >= 0; i-- {
 			name := ldrList[i]
 			dll := peMap[name]
-			if !strings.HasPrefix(name, "api") && !strings.HasPrefix(name, "kernelbase") && !strings.HasPrefix(name, "ucrt") {
+			if !strings.HasPrefix(name, "api") && !strings.HasPrefix(name, "ucrt") {
 				if dll.EntryPoint() != 0 {
 					fmt.Println(dll.Name)
 					emu.setupDllMainCallstack(dll)
