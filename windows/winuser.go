@@ -2,7 +2,6 @@ package windows
 
 import (
 	"encoding/binary"
-	"fmt"
 	"github.com/carbonblack/binee/pefile"
 )
 
@@ -23,7 +22,10 @@ func loadString(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmula
 		}
 		bytes, _ := emu.Uc.MemRead(uint64(dataEntry.OffsetToData)+emu.MemRegions.ImageAddress, uint64(dataEntry.Size))
 		index := uint64(0)
-		//The weird operation to get the offset
+		//Strings in the resource are stored in a specific structure
+		//we can assume it is {length: 2bytes, actualString:(length)bytes}
+		//so to reach the wanted string we have to iterate on every length
+		//and seek that length.
 		for i := uint64(0); i < stringNum; i++ {
 			index += (uint64(binary.LittleEndian.Uint16(bytes[index:index+2])) + 1) * 2
 		}
@@ -44,7 +46,6 @@ func loadString(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmula
 				if ok == nil {
 					if !wide {
 						actualString := pefile.WideStringToString(bytes, int(length*2))
-						fmt.Println(actualString)
 						emu.Uc.MemWrite(in.Args[2], []byte(actualString))
 						emu.Uc.MemWrite(in.Args[2]+length, []byte{0}) //Write null byte
 					} else {
@@ -123,7 +124,9 @@ func WinuserHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "GetSystemMetrics", &Hook{
 		Parameters: []string{"nIndex"},
-		Fn:         SkipFunctionStdCall(true, 0x1),
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 1)(emu, in)
+		},
 	})
 	emu.AddHook("", "LoadAcceleratorsA", &Hook{
 		Parameters: []string{"hInstance", "a:lpTableName"},

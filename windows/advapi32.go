@@ -41,6 +41,9 @@ func AdvApi32Hooks(emu *WinEmulator) {
 		},
 	})
 
+	emu.AddHook("", "CryptAcquireContextA", &Hook{
+		Parameters: []string{"phProv", "a:szContainer", "a:szProvider", "dwProvType", "dwFlags"},
+	})
 	emu.AddHook("", "StartServiceCtrlDispatcherW", &Hook{
 		Parameters: []string{"v:lpServiceStartTable"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {

@@ -1,8 +1,10 @@
 package windows
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/carbonblack/binee/pefile"
 	"io/ioutil"
 
 	"github.com/carbonblack/binee/util"
@@ -71,6 +73,23 @@ func freeVirtualMemory(emu *WinEmulator, in *Instruction) bool {
 	return SkipFunctionStdCall(true, 0x1)(emu, in)
 }
 
+func imageNtHeaderEX(emu *WinEmulator, in *Instruction) bool {
+	//in.Args[4]+118
+	pointerOut := in.Args[4]
+	baseAddress := in.Args[1]
+	dosHeader := &pefile.DosHeader{}
+	byte1, _ := emu.Uc.MemRead(baseAddress, 64)
+	r := bytes.NewReader(byte1)
+	if err := binary.Read(r, binary.LittleEndian, dosHeader); err != nil {
+		return SkipFunctionStdCall(true, 1)(emu, in)
+	}
+	byte := make([]byte, 4)
+	NTheaderPointer := uint32(in.Args[1]) + dosHeader.AddressExeHeader
+	binary.LittleEndian.PutUint32(byte, NTheaderPointer)
+	emu.Uc.MemWrite(pointerOut, byte)
+	return SkipFunctionStdCall(true, 0)(emu, in)
+}
+
 //NTSYSAPI NTSTATUS ZwMapViewOfSection(
 //  HANDLE          SectionHandle,
 //  HANDLE          ProcessHandle,
@@ -118,6 +137,7 @@ func NtdllHooks(emu *WinEmulator) {
 	//);
 	emu.AddHook("", "RtlSetProtectedPolicy", &Hook{
 		Parameters: []string{"PolicyGuid", "PolicyValue", "OldPolicyValue"},
+		Fn:         SkipFunctionStdCall(true, 1),
 	})
 	emu.AddHook("", "LdrControlFlowGuardEnforced", &Hook{
 		Parameters: []string{""},
@@ -157,7 +177,6 @@ func NtdllHooks(emu *WinEmulator) {
 		Parameters: []string{"ProcessHandle", "BaseAddress", "RegionSize", "FreeType"},
 		Fn:         freeVirtualMemory,
 	})
-
 	// https://googleprojectzero.blogspot.com/2017/08/windows-exploitation-tricks-arbitrary.html
 	emu.AddHook("", "NtGetNlsSectionPtr", &Hook{
 		Parameters: []string{"NlsType", "CodePage", "ContextData", "SectionPointer", "SectionSize"},
@@ -233,6 +252,11 @@ func NtdllHooks(emu *WinEmulator) {
 		Parameters: []string{"Flags", "HeapBase", "ReserveSize", "CommitSize", "Lock", "Parameters"},
 		Fn:         SkipFunctionStdCall(true, 0x123456),
 	})
+	emu.AddHook("", "RtlDeleteCriticalSection", &Hook{
+		Parameters: []string{"lpCriticalSection"},
+		Fn:         SkipFunctionStdCall(false, 0),
+	})
+
 	emu.AddHook("", "RtlDebugPrintTimes", &Hook{
 		Parameters: []string{""},
 	})
@@ -246,7 +270,8 @@ func NtdllHooks(emu *WinEmulator) {
 		Parameters: []string{"ModuleAddress"},
 	})
 	emu.AddHook("", "RtlImageNtHeaderEx", &Hook{
-		Parameters: []string{"Flags", "Base", "Size", "OutHeaders"},
+		Parameters: []string{"Flags", "Base", "Size", "UNDOCUMENTED", "OutHeaders"},
+		Fn:         imageNtHeaderEX,
 	})
 	emu.AddHook("", "RtlInitializeCriticalSectionAndSpinCount", &Hook{
 		Parameters: []string{"lpCriticalSection", "dwSpinCount"},
@@ -317,6 +342,7 @@ func NtdllHooks(emu *WinEmulator) {
 	emu.AddHook("", "ZwClose", &Hook{
 		Parameters: []string{"Handle"},
 	})
+
 	emu.AddHook("", "ZwConnectPort", &Hook{
 		Parameters: []string{"PortHandle", "PortName", "SecurityQos", "ClientView", "ServerView", "MaxMessageLength", "ConnectionInformation", "ConnectionInformationLength"},
 	})
@@ -345,6 +371,8 @@ func NtdllHooks(emu *WinEmulator) {
 		Parameters: []string{"FileHandle", "IoStatusBlock", "FileInformation", "Length", "FileInformationClass"},
 		Fn:         SkipFunctionStdCall(true, 0x0),
 	})
+	emu.AddHook("", "RtlInitializeSListHead", &Hook{Parameters: []string{"ListHead"}})
+
 	emu.AddHook("", "ZwWaitForAlertByThreadId", &Hook{
 		Parameters: []string{"first", "second"},
 		Fn:         SkipFunctionStdCall(true, 0x0),

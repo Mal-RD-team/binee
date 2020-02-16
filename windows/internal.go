@@ -25,4 +25,7 @@ func Internal(emu *WinEmulator) {
 	emu.AddHook("", "UserClientDllInitialize", &Hook{
 		Parameters: []string{},
 	})
+	emu.AddHook("", "LdrResolveDelayLoadedAPI", &Hook{
+		Parameters: []string{"base", "desc", "dllhook", "syshook", "addr", "flags"},
+	})
 }
