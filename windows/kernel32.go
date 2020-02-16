@@ -3,7 +3,9 @@ package windows
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -256,22 +258,160 @@ func loadLibrary(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmul
 	}
 
 }
+func getProcAddress(emu *WinEmulator, baseAddress uint64, wantedFuncName string, wantedFuncOrdinal uint16) uint64 {
 
-func getProcAddress(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
-	name := util.ReadASCII(emu.Uc, in.Args[1], 0)
-	if dllname := emu.lookupLibByAddress(in.Args[0]); dllname != "" {
-		//The ordinal value might be given and not the function name.
-		if len(name) == 0 {
-			ordinalValue := in.Args[1]
-			name = emu.libOrdinalFunction[dllname][uint16(ordinalValue)]
-			addr := emu.libFunctionAddress[dllname][name]
-			return SkipFunctionStdCall(true, addr)
-		} else {
-			addr := emu.libFunctionAddress[dllname][name]
-			return SkipFunctionStdCall(true, addr)
+	raw, err := emu.Uc.MemRead(baseAddress, 4096)
+	if err != nil {
+		return 0
+	}
+
+	imageDosHeader := &pefile.DosHeader{}
+	r := bytes.NewReader(raw)
+	if err = binary.Read(r, binary.LittleEndian, imageDosHeader); err != nil {
+		return 0
+	}
+
+	// move offset to CoffHeader
+	if _, err = r.Seek(int64(imageDosHeader.AddressExeHeader)+4, io.SeekStart); err != nil {
+		return 0
+	}
+
+	// advance reader to start of OptionalHeader(32|32+)
+	if _, err = r.Seek(int64(imageDosHeader.AddressExeHeader)+4+int64(binary.Size(pefile.CoffHeader{})), io.SeekStart); err != nil {
+		return 0
+	}
+
+	// check if pe or pe+, read 2 bytes to get Magic then seek backward two bytes
+	var _magic uint16
+	if err := binary.Read(r, binary.LittleEndian, &_magic); err != nil {
+		return 0
+	}
+	var PeType uint16
+	// check magic, must be a PE or PE+
+	if _magic == 0x10b {
+		PeType = 32
+	} else if _magic == 0x20b {
+		PeType = 64
+	} else {
+		return 0
+	}
+
+	if _, err = r.Seek(int64(imageDosHeader.AddressExeHeader)+4+int64(binary.Size(pefile.CoffHeader{})), io.SeekStart); err != nil {
+		return 0
+	}
+
+	var peOptionalHeader interface{}
+	// copy the optional headers into their respective structs
+	if PeType == 32 {
+		peOptionalHeader = &pefile.OptionalHeader32{}
+		if err = binary.Read(r, binary.LittleEndian, peOptionalHeader); err != nil {
+			return 0
+		}
+	} else {
+		peOptionalHeader = &pefile.OptionalHeader32P{}
+		if err = binary.Read(r, binary.LittleEndian, peOptionalHeader); err != nil {
+			return 0
 		}
 	}
-	return SkipFunctionStdCall(true, 0x0)
+
+	var rawExportDirectory []byte
+	var exportRva, size uint32
+	var ordinal uint16
+	if PeType == 32 {
+		exportDirectory := peOptionalHeader.(*pefile.OptionalHeader32).DataDirectories[0]
+		exportRva = exportDirectory.VirtualAddress
+		size = exportDirectory.Size
+		rawExportDirectory, _ = emu.Uc.MemRead(uint64(exportRva)+baseAddress, uint64(exportDirectory.Size))
+		r = bytes.NewReader(rawExportDirectory)
+
+	} else {
+		exportDirectory := peOptionalHeader.(*pefile.OptionalHeader32P).DataDirectories[0]
+		exportRva = exportDirectory.VirtualAddress
+		size = exportDirectory.Size
+		rawExportDirectory, _ = emu.Uc.MemRead(uint64(exportRva)+baseAddress, uint64(size))
+		r = bytes.NewReader(rawExportDirectory)
+	}
+	exportDirectory := pefile.ExportDirectory{}
+	if err := binary.Read(r, binary.LittleEndian, &exportDirectory); err != nil {
+		return 0
+	}
+	namesTableRVA := exportDirectory.NamesRva - exportRva
+	ordinalsTableRVA := exportDirectory.OrdinalsRva - exportRva
+	for i := 0; i < int(exportDirectory.NumberOfNamePointers); i++ {
+		// seek to index in names table
+		if _, err := r.Seek(int64(namesTableRVA+uint32(i*4)), io.SeekStart); err != nil {
+			return 0
+		}
+
+		exportAddressTable := pefile.ExportAddressTable{}
+		if err := binary.Read(r, binary.LittleEndian, &exportAddressTable); err != nil {
+			return 0
+		}
+
+		name := pefile.ReadString(rawExportDirectory[exportAddressTable.Rva-exportRva:])
+		if name != wantedFuncName && wantedFuncOrdinal == 0 {
+			continue //Another check to stop reads that are not helpful
+		}
+
+		// get first Name in array
+		ordinal = binary.LittleEndian.Uint16(rawExportDirectory[ordinalsTableRVA+uint32(i*2) : ordinalsTableRVA+uint32(i*2)+2])
+
+		// seek to ordinals table
+		if _, err := r.Seek(int64(uint32(ordinal)*4+exportDirectory.FunctionsRva-exportRva), io.SeekStart); err != nil {
+			return 0
+		}
+
+		// get ordinal address table
+		exportOrdinalTable := pefile.ExportAddressTable{}
+		if err := binary.Read(r, binary.LittleEndian, &exportOrdinalTable); err != nil {
+			return 0
+		}
+		rva := exportOrdinalTable.Rva
+
+		//Check whether its forwarded or not
+		if rva < exportRva+size && rva > exportRva && (name == wantedFuncName || (uint32(i)+exportDirectory.OrdinalBase) == uint32(wantedFuncOrdinal)) {
+			//Its in the range of exports, its forwarded.
+			if _, err := r.Seek(int64(rva-exportRva), io.SeekStart); err != nil {
+				return 0
+			}
+			forwardedExportRaw := pefile.ReadString(rawExportDirectory[rva-exportRva:])
+			split := strings.Split(forwardedExportRaw, ".")
+			dllName := strings.ToLower(split[0]) + ".dll"
+			ordinalNum := 0
+			funcName := ""
+			var err error
+			if split[1][0] == '#' {
+				numStr := split[1][1:]
+				if ordinalNum, err = strconv.Atoi(numStr); err != nil {
+					return 0
+				}
+			} else {
+				funcName = split[1]
+			}
+			libAddress := emu.LoadedModules[dllName]
+
+			return getProcAddress(emu, libAddress, funcName, uint16(ordinalNum))
+		}
+		if name == wantedFuncName || uint32(i)+exportDirectory.OrdinalBase == uint32(wantedFuncOrdinal) {
+			return uint64(rva) + baseAddress
+		}
+
+	}
+	return 0
+
+}
+func getProcAddressWrapper(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
+	baseAddr := in.Args[0]
+	//The ordinal value might be given and not the function name.
+	if in.Args[1] < 65535 { //USHRT_MAX
+		ordinalValue := in.Args[1]
+		rva := getProcAddress(emu, baseAddr, "", uint16(ordinalValue))
+		return SkipFunctionStdCall(true, rva)
+	} else {
+		name := util.ReadASCII(emu.Uc, in.Args[1], 0)
+		rva := getProcAddress(emu, baseAddr, name, 0)
+		return SkipFunctionStdCall(true, rva)
+	}
 }
 
 func KernelbaseHooks(emu *WinEmulator) {
@@ -313,6 +453,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
 	})
+
 	emu.AddHook("", "DecodePointer", &Hook{
 		Parameters: []string{"Ptr"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
@@ -352,6 +493,10 @@ func KernelbaseHooks(emu *WinEmulator) {
 		},
 	})
 	emu.AddHook("", "EnterCriticalSection", &Hook{
+		Parameters: []string{"lpCriticalSection"},
+		Fn:         SkipFunctionStdCall(false, 0),
+	})
+	emu.AddHook("", "RtlEnterCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
 	})
@@ -526,7 +671,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "GetProcAddress", &Hook{
 		Parameters: []string{"hModule", "a:lpProcName"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
-			return getProcAddress(emu, in)(emu, in)
+			return getProcAddressWrapper(emu, in)(emu, in)
 		},
 	})
 	emu.AddHook("", "GetStringTypeW", &Hook{
@@ -756,16 +901,20 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
 	})
+	emu.AddHook("", "RtlLeaveCriticalSection", &Hook{
+		Parameters: []string{"lpCriticalSection"},
+		Fn:         SkipFunctionStdCall(false, 0),
+	})
 	emu.AddHook("", "LCMapStringA", &Hook{
-		Parameters: []string{"Locale", "dwMapFlags", "a:lpSrcStr", "cchSrc", "lpDestStr", "cchDest"},
+		Parameters: []string{"Locale", "dwMapFlags", "lpSrcStr", "cchSrc", "lpDestStr", "cchDest"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
 	emu.AddHook("", "LCMapStringW", &Hook{
-		Parameters: []string{"Locale", "dwMapFlags", "w:lpSrcStr", "cchSrc", "lpDestStr", "cchDest"},
+		Parameters: []string{"Locale", "dwMapFlags", "lpSrcStr", "cchSrc", "lpDestStr", "cchDest"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
 	emu.AddHook("", "LCMapStringEx", &Hook{
-		Parameters: []string{"lpLocaleName", "dwMapFlags", "w:lpSrcStr", "cchSrc", "lpDestStr", "cchDest", "lpVersionInformation", "lpReserved", "sortHandle"},
+		Parameters: []string{"lpLocaleName", "dwMapFlags", "lpSrcStr", "cchSrc", "lpDestStr", "cchDest", "lpVersionInformation", "lpReserved", "sortHandle"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
 	emu.AddHook("", "LoadLibraryA", &Hook{
@@ -918,7 +1067,10 @@ func KernelbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "_CorExeMain", &Hook{Parameters: []string{}})
 	emu.AddHook("", "GetCPHashNode", &Hook{Parameters: []string{}})
 	emu.AddHook("", "GetCPFileNameFromRegistry", &Hook{Parameters: []string{"CodePage", "w:FileName", "FileNameSize"}})
-	emu.AddHook("", "LocalFree", &Hook{Parameters: []string{"hMem"}})
+	emu.AddHook("", "LocalFree", &Hook{
+		Parameters: []string{"hMem"},
+		Fn:         SkipFunctionStdCall(true, 0),
+	})
 	emu.AddHook("", "MultiByteToWideChar", &Hook{
 		Parameters: []string{"CodePage", "dwFlags", "lpMultiByteStr", "cbMultiByte", "lpWideCharStr", "cchWideChar"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {

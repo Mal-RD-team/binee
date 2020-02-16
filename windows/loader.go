@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"os"
-	"strings"
-
 	"github.com/carbonblack/binee/pefile"
 	"github.com/carbonblack/binee/util"
+	"os"
+	"strings"
 
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 )
@@ -859,8 +858,8 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 		if dll == nil {
 			continue
 		}
-		//Checking if forwarded export, keep looping until we find the func
 
+		//Checking if forwarded export, keep looping until we find the func
 		if val, ok := dll.ForwardedExports[funcName]; ok {
 			dllName = val.DllName + ".dll"
 			funcName = val.FuncName
@@ -880,6 +879,7 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 		dll = peMap[dllName]
 
 		realAddr := uint64(dll.ExportNameMap[funcName].Rva) + dll.ImageBase()
+
 		pe.SetImportAddress(importInfo, realAddr)
 	}
 
