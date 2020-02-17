@@ -163,28 +163,29 @@ type ImportInfo struct {
 }
 
 type PeFile struct {
-	Path                  string
-	Name                  string //import name, apiset or on disk
-	RealName              string //on disk short name
-	Sha256                string
-	DosHeader             *DosHeader
-	CoffHeader            *CoffHeader
-	OptionalHeader        interface{}
-	PeType                PeType
-	Sections              []*Section
-	sectionHeaders        []*SectionHeader
-	HeadersAsSection      *Section
-	Imports               []*ImportInfo
-	Exports               []*Export
-	ExportNameMap         map[string]*Export
-	ExportOrdinalMap      map[int]*Export
-	ForwardedExports      map[string]ForwardedExport
-	Apisets               map[string][]string
-	Size                  int64
-	RawHeaders            []byte
-	oldImageBase          uint64
-	ImageSize             int64
-	ResourceDirectoryRoot ResourceDirectory
+	Path                      string
+	Name                      string //import name, apiset or on disk
+	RealName                  string //on disk short name
+	Sha256                    string
+	DosHeader                 *DosHeader
+	CoffHeader                *CoffHeader
+	OptionalHeader            interface{}
+	PeType                    PeType
+	Sections                  []*Section
+	sectionHeaders            []*SectionHeader
+	HeadersAsSection          *Section
+	Imports                   []*ImportInfo
+	Exports                   []*Export
+	ExportNameMap             map[string]*Export
+	ExportOrdinalMap          map[int]*Export
+	ForwardedExports          map[string]ForwardedExport
+	ForwardedExportsByOrdinal map[uint16]ForwardedExport
+	Apisets                   map[string][]string
+	Size                      int64
+	RawHeaders                []byte
+	oldImageBase              uint64
+	ImageSize                 int64
+	ResourceDirectoryRoot     ResourceDirectory
 }
 
 func entropy(bs []byte) float64 {
@@ -506,6 +507,7 @@ func (pe *PeFile) readExports() error {
 	pe.ExportNameMap = make(map[string]*Export)
 	pe.ExportOrdinalMap = make(map[int]*Export)
 	pe.ForwardedExports = make(map[string]ForwardedExport)
+	pe.ForwardedExportsByOrdinal = make(map[uint16]ForwardedExport)
 	for i := 0; i < int(exportDirectory.NumberOfNamePointers); i++ {
 		// seek to index in names table
 		if _, err := r.Seek(int64(namesTableRVA+uint32(i*4)), io.SeekStart); err != nil {
@@ -555,14 +557,17 @@ func (pe *PeFile) readExports() error {
 
 			}
 			forwardedExport := ForwardedExport{strings.ToLower(split[0]), funcName, uint16(ordinalNum)}
-			pe.ForwardedExports[name] = forwardedExport
+			if ordinalNum == 0 {
+				pe.ForwardedExports[name] = forwardedExport
+			} else {
+				pe.ForwardedExportsByOrdinal[uint16(ordinalNum)] = forwardedExport
+			}
 			continue
 		}
-		export := &Export{name, ordinal + uint16(exportDirectory.OrdinalBase), rva}
+		export := &Export{name, ordinal + uint16(exportDirectory.OrdinalBase) - 1, rva}
 		pe.Exports = append(pe.Exports, export)
 		pe.ExportNameMap[name] = export
-		pe.ExportOrdinalMap[int(ordinal)] = export
-
+		pe.ExportOrdinalMap[int(ordinal)+int(exportDirectory.OrdinalBase)-1] = export
 	}
 
 	return nil

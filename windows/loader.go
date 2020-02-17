@@ -855,40 +855,68 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 		dllName := importInfo.DllName
 		dll := peMap[dllName]
 		funcName := importInfo.FuncName
+		ordinalNum := importInfo.Ordinal
+		var val pefile.ForwardedExport
+		var ok bool
 		if dll == nil {
 			continue
 		}
-
+		if ordinalNum != 0 {
+			val, ok = dll.ForwardedExportsByOrdinal[ordinalNum]
+		} else {
+			val, ok = dll.ForwardedExports[funcName]
+		}
 		//Checking if forwarded export, keep looping until we find the func
-		if val, ok := dll.ForwardedExports[funcName]; ok {
+		if ok {
 			dllName = val.DllName + ".dll"
 			funcName = val.FuncName
+			ordinalNum := val.Ordinal
 			for true {
-				//the function we are going to is not forwarded anywhere.
-				//We still have to handle ordinals
-				if funcName == "" {
+				if _, ok := peMap[dllName]; !ok {
+					//The dll required is not loaded, loading logic should be added here
 					break
 				}
-				if _, ok := peMap[dllName].ForwardedExports[funcName]; !ok {
-					break
+				/*Handle by Ordinal*/
+				if ordinalNum != 0 {
+					if _, ok := peMap[dllName].ForwardedExportsByOrdinal[ordinalNum]; !ok {
+						//Func is not forwarded anymore
+						break
+					}
+					dllName = peMap[dllName].ForwardedExportsByOrdinal[ordinalNum].DllName + ".dll"
+					funcName = peMap[dllName].ForwardedExportsByOrdinal[ordinalNum].FuncName
+					ordinalNum = peMap[dllName].ForwardedExportsByOrdinal[ordinalNum].Ordinal
+				} else /*Handle by Name*/ {
+					if _, ok := peMap[dllName].ForwardedExports[funcName]; !ok {
+						//Func is not forwarded anymore
+						break
+					}
+					dllName = peMap[dllName].ForwardedExports[funcName].DllName + ".dll"
+					funcName = peMap[dllName].ForwardedExports[funcName].FuncName
+					ordinalNum = peMap[dllName].ForwardedExports[funcName].Ordinal
 				}
-				dllName = peMap[dllName].ForwardedExports[funcName].DllName + ".dll"
-				funcName = peMap[dllName].ForwardedExports[funcName].FuncName
+
 			}
 		}
 		dll = peMap[dllName]
-
-		realAddr := uint64(dll.ExportNameMap[funcName].Rva) + dll.ImageBase()
-
+		var realAddr uint64
+		if ordinalNum != 0 {
+			if _, ok := dll.ExportOrdinalMap[int(ordinalNum)]; ok {
+				realAddr = uint64(dll.ExportOrdinalMap[int(ordinalNum)].Rva) + dll.ImageBase()
+			}
+		} else {
+			if _, ok := dll.ExportNameMap[funcName]; ok {
+				realAddr = uint64(dll.ExportNameMap[funcName].Rva) + dll.ImageBase()
+			}
+		}
 		pe.SetImportAddress(importInfo, realAddr)
 	}
 
 	// resolve imports between dlls, for each loaded dll
-	for _, dll := range peMap {
+	for _, currentDll := range peMap {
 		// loop through current DLL and update all imports
-		for _, importInfo := range dll.Imports {
+		for _, importInfo := range currentDll.Imports {
 
-			if importInfo.DllName == dll.Name {
+			if importInfo.DllName == currentDll.Name {
 				continue
 			}
 
@@ -896,40 +924,66 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 			if importedDll == nil {
 				continue
 			}
-
-			if importInfo.FuncName != "" {
-				funcName := importInfo.FuncName
-				dllName := importInfo.DllName
-				importFrom := peMap[dllName]
-				if importFrom == nil {
-					continue
-				}
-				if val, ok := importFrom.ForwardedExports[funcName]; ok {
-					dllName = val.DllName + ".dll"
-					funcName = val.FuncName
-					for true {
-						//the function we are going to is not forwarded anywhere.
-						//We still have to handle ordinals
-						if funcName == "" {
+			dllName := importInfo.DllName
+			dll := peMap[dllName]
+			funcName := importInfo.FuncName
+			ordinalNum := importInfo.Ordinal
+			var val pefile.ForwardedExport
+			var ok bool
+			if dll == nil {
+				continue
+			}
+			if ordinalNum != 0 {
+				val, ok = dll.ForwardedExportsByOrdinal[ordinalNum]
+			} else {
+				val, ok = dll.ForwardedExports[funcName]
+			}
+			//Checking if forwarded export, keep looping until we find the func
+			if ok {
+				dllName = val.DllName + ".dll"
+				funcName = val.FuncName
+				ordinalNum := val.Ordinal
+				for true {
+					if _, ok := peMap[dllName]; !ok {
+						//The dll required is not loaded, loading logic should be added here
+						break
+					}
+					/*Handle by Ordinal*/
+					if ordinalNum != 0 {
+						if _, ok := peMap[dllName].ForwardedExportsByOrdinal[ordinalNum]; !ok {
+							//Func is not forwarded anymore
 							break
 						}
+						dllName = peMap[dllName].ForwardedExportsByOrdinal[ordinalNum].DllName + ".dll"
+						funcName = peMap[dllName].ForwardedExportsByOrdinal[ordinalNum].FuncName
+						ordinalNum = peMap[dllName].ForwardedExportsByOrdinal[ordinalNum].Ordinal
+					} else /*Handle by Name*/ {
 						if _, ok := peMap[dllName].ForwardedExports[funcName]; !ok {
+							//Func is not forwarded anymore
 							break
 						}
 						dllName = peMap[dllName].ForwardedExports[funcName].DllName + ".dll"
 						funcName = peMap[dllName].ForwardedExports[funcName].FuncName
+						ordinalNum = peMap[dllName].ForwardedExports[funcName].Ordinal
 					}
-				}
-				importFrom = peMap[dllName]
-				realAddr := uint64(importFrom.ExportNameMap[funcName].Rva) + importFrom.ImageBase()
-				dll.SetImportAddress(importInfo, realAddr)
-			} else {
-				if _, ok := importedDll.ExportOrdinalMap[int(importInfo.Ordinal)]; ok {
-					realAddr := uint64(importedDll.ExportOrdinalMap[int(importInfo.Ordinal)].Rva) + importedDll.ImageBase()
-					dll.SetImportAddress(importInfo, realAddr)
+
 				}
 			}
-
+			dll = peMap[dllName]
+			if dll == nil {
+				continue
+			}
+			var realAddr uint64
+			if ordinalNum != 0 {
+				if _, ok := dll.ExportOrdinalMap[int(ordinalNum)]; ok {
+					realAddr = uint64(dll.ExportOrdinalMap[int(ordinalNum)].Rva) + dll.ImageBase()
+				}
+			} else {
+				if _, ok := dll.ExportNameMap[funcName]; ok {
+					realAddr = uint64(dll.ExportNameMap[funcName].Rva) + dll.ImageBase()
+				}
+			}
+			currentDll.SetImportAddress(importInfo, realAddr)
 		}
 	}
 
