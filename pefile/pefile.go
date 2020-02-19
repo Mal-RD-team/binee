@@ -1001,7 +1001,6 @@ func (pe *PeFile) readResources() error {
 			return err
 		}
 	}
-	//pe.findResource("DVCLAL",uint32(10))
 	return nil
 }
 
