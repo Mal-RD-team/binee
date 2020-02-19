@@ -85,8 +85,14 @@ func WinbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "lstrcatA", &Hook{
 		Parameters: []string{"a:lpString1", "a:lpString2"},
 	})
+	emu.AddHook("", "lstrcatW", &Hook{
+		Parameters: []string{"w:lpString1", "w:lpString2"},
+	})
 	emu.AddHook("", "lstrcpyA", &Hook{
 		Parameters: []string{"pString1", "a:lpString2"},
+	})
+	emu.AddHook("", "lstrcpyW", &Hook{
+		Parameters: []string{"pString1", "w:lpString2"},
 	})
 	emu.AddHook("", "lstrcpynA", &Hook{
 		Parameters: []string{"lpString1", "a:lpString1", "iMaxLength"},

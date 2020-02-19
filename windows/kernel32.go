@@ -33,6 +33,123 @@ type StartupInfo struct {
 	StdError    uint32
 }
 
+func enumDeviceDrivers(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
+
+	if emu.PtrSize == 4 {
+		count := uint32(in.Args[1] / 4)
+		numberOfDrivers := uint32(len(emu.Opts.Drivers))
+		if count < numberOfDrivers {
+			//Need more bytes
+			util.PutPointer(emu.Uc, emu.PtrSize, in.Args[2], uint64(numberOfDrivers)*4)
+			return SkipFunctionStdCall(true, 0) //Fail
+		}
+		index := in.Args[0]
+		i := uint32(0)
+		for val, _ := range emu.Opts.Drivers {
+			if i == count {
+				break
+			}
+			util.PutPointer(emu.Uc, emu.PtrSize, index, uint64(val))
+			index += 4
+		}
+
+	}
+	return SkipFunctionStdCall(true, 1)
+}
+
+//DWORD GetDeviceDriverBaseNameW(
+//LPVOID ImageBase,
+//LPWSTR lpBaseName,
+//DWORD  nSize
+//);
+
+func getDeviceDriverBaseName(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	ret := 0
+	if wide {
+		address := in.Args[0]
+		driverName := util.ASCIIToWinWChar(emu.Opts.Drivers[int(address)])
+		maxSize := in.Args[2]
+		ret = len(driverName)
+		if int(maxSize+2) < ret {
+			driverName = driverName[0 : maxSize-2]
+			ret = int(maxSize - 2)
+		}
+		driverName = append(driverName, 0, 0)
+		emu.Uc.MemWrite(in.Args[1], driverName)
+	} else {
+		address := in.Args[0]
+		driverName := []byte(emu.Opts.Drivers[int(address)])
+		maxSize := in.Args[2]
+		ret = len(driverName)
+		if int(maxSize-1) < ret {
+			driverName = driverName[0 : maxSize-1]
+			ret = int(maxSize)
+		}
+		driverName = append(driverName, 0)
+
+		emu.Uc.MemWrite(in.Args[1], driverName)
+	}
+	return SkipFunctionStdCall(true, uint64(ret))
+}
+
+func lstrcmpi(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	var retVal int
+	if wide {
+		string1 := util.ReadWideChar(emu.Uc, in.Args[0], 0)
+		string2 := util.ReadWideChar(emu.Uc, in.Args[1], 0)
+		retVal = strings.Compare(strings.ToLower(string1), strings.ToLower(string2))
+
+	} else {
+		string1 := util.ReadASCII(emu.Uc, in.Args[0], 0)
+		string2 := util.ReadASCII(emu.Uc, in.Args[1], 0)
+		retVal = strings.Compare(strings.ToLower(string1), strings.ToLower(string2))
+	}
+	return SkipFunctionStdCall(true, uint64(retVal))
+}
+func getVolumeInformation(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	/*The function depends on the given parameters to know what is requested,
+	  nulled input means its not required */
+	volumeName := emu.Opts.VolumeName
+	volumeSerial := emu.Opts.VolumeSerialNumber
+	volumeSystemName := emu.Opts.VolumeSystemName
+	if wide {
+		if in.Args[0] != 0 {
+			//This might be used later to assume we have many volumes.
+			//rootPathName=util.ReadWideChar(emu.Uc,in.Args[0],0)
+		}
+		if in.Args[1] != 0 { // Volume name is required.
+			if len(volumeName) < int(in.Args[2]) { //Check volume name size
+				volumeNameW := util.ASCIIToWinWChar(volumeName)
+				err := emu.Uc.MemWrite(in.Args[1], volumeNameW)
+				if err != nil {
+					return SkipFunctionStdCall(true, 0)
+				}
+			}
+		}
+		if in.Args[3] != 0 { //Volume serial is required.
+			buf := make([]byte, 4)
+			binary.LittleEndian.PutUint32(buf, uint32(volumeSerial))
+			err := emu.Uc.MemWrite(in.Args[3], buf)
+			if err != nil {
+				return SkipFunctionStdCall(true, 0)
+			}
+		}
+
+		if in.Args[6] != 0 {
+			if len(volumeSystemName) < int(in.Args[7]) { //Check volume name size
+				volumeSystemNameW := util.ASCIIToWinWChar(volumeSystemName)
+				err := emu.Uc.MemWrite(in.Args[6], volumeSystemNameW)
+				if err != nil {
+					return SkipFunctionStdCall(true, 0)
+				}
+			}
+		}
+
+	} else {
+
+	}
+	return SkipFunctionStdCall(true, 0)
+}
 func GetModuleHandle(emu *WinEmulator, in *Instruction, wide bool) uint64 {
 	hinstance := uint64(0)
 	if in.Args[0] == 0x0 {
@@ -175,7 +292,6 @@ func createFile(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmula
 		return SkipFunctionStdCall(true, 0xffffffff)
 	}
 }
-
 func loadLibrary(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	var err error
 
@@ -449,6 +565,20 @@ func KernelbaseHooks(emu *WinEmulator) {
 	//		return FindResource(emu,in,false)(emu,in)
 	//	},
 	//})
+
+	emu.AddHook("", "EnumDeviceDrivers", &Hook{
+		Parameters: []string{"lpImageBase", "cb", "lpcbNeeded"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+
+			return enumDeviceDrivers(emu, in)(emu, in)
+		},
+	})
+	emu.AddHook("", "GetDeviceDriverBaseNameW", &Hook{
+		Parameters: []string{"ImageBase", "lpBaseName", "nSize"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return getDeviceDriverBaseName(emu, in, true)(emu, in)
+		},
+	})
 	emu.AddHook("", "DeleteCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
@@ -873,6 +1003,13 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(true, uint64(len(d)))(emu, in)
 		},
 	})
+
+	emu.AddHook("", "GetVolumeInformationW", &Hook{
+		Parameters: []string{"w:lpRootPathName", "w:lpVolumeNameBuffer", "nVolumeNameSize", "lpVolumeSerialNumber", "lpMaximumComponentLength", "lpFileSystemFlags", "w:lpFileSystemNameBuffer", "nFileSystemNameSize"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return getVolumeInformation(emu, in, true)(emu, in)
+		},
+	})
 	emu.AddHook("", "InitializeCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0x1),
@@ -1113,8 +1250,28 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return openFileMapping(emu, in, true)(emu, in)
 		},
 	})
+
+	emu.AddHook("", "lstrcmpiA", &Hook{
+		Parameters: []string{"a:lpString1", "a:lpString2"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return lstrcmpi(emu, in, false)(emu, in)
+		},
+	})
+	emu.AddHook("", "lstrcmpiW", &Hook{
+		Parameters: []string{"w:lpString1", "w:lpString2"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return lstrcmpi(emu, in, true)(emu, in)
+		},
+	})
 	emu.AddHook("", "MapViewOfFile", &Hook{
 		Parameters: []string{"hFileMappingObject", "dwDesiredAccess", "dwFileOffsetHigh", "dwFileOffsetLow", "dwNumberOfBytesToMap"},
 	})
-
+	//LONG GetCurrentPackageId(
+	//	UINT32 *bufferLength,
+	//	BYTE   *buffer
+	//);
+	emu.AddHook("", "GetCurrentPackageId", &Hook{
+		Parameters: []string{"bufferLength", "buffer"},
+		//Fn:SkipFunctionStdCall(true,0),
+	})
 }

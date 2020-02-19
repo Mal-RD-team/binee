@@ -49,6 +49,7 @@ func (emu *WinEmulator) LoadHooks() {
 	ShlobjCoreHooks(emu)
 	MemoryApiHooks(emu)
 	Internal(emu)
+	ToolHelpHooks(emu)
 }
 func (emu *WinEmulator) SetupHooks() error {
 	emu.Uc.HookAdd(uc.HOOK_CODE, HookCode(emu), 1, 0)
@@ -75,13 +76,16 @@ func (emu *WinEmulator) Start() error {
 	emu.SetupHooks()
 
 	emu.Uc.Start(emu.EntryPoint, 0x0)
-
-	if emu.Scheduler.CurThreadId() != 1 {
+	if len(emu.Scheduler.threads) > 1 {
 		ip := emu.Scheduler.ThreadEnded(emu.Scheduler.CurThreadId())
 		emu.Uc.Start(ip, 0x0)
 	}
 
 	return nil
+}
+func (emu *WinEmulator) Mn3m(addr uint64, size uint64) uint32 {
+	z, _ := emu.Uc.MemRead(addr, size)
+	return binary.LittleEndian.Uint32(z)
 }
 
 func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
@@ -91,6 +95,7 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 		// capture next address, if cur address is a function call, next address is the ret address
 		instruction := emu.BuildInstruction(addr, size)
 		doContinue := instruction.Hook.Fn(emu, instruction)
+
 		//strInstr:=instruction.String()
 		////Hot patch to the anti-emulation trick
 		//if strings.Contains(strInstr,"rep"){
@@ -101,6 +106,11 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 		//			emu.Uc.RegWrite(uc.X86_REG_ECX, 1)
 		//		}
 		//	}
+		//}
+		//Debugging stuff
+		//z:=instruction.String()
+		//if false {
+		//	fmt.Println(z)
 		//}
 
 		var returns uint64
@@ -138,8 +148,9 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 			} else if emu.Verbosity == 1 {
 				if s := instruction.StringHook(); s != "" {
 					fmt.Println(s)
+				} else {
+					fmt.Println(instruction)
 				}
-				fmt.Println(instruction)
 			} else {
 				if instruction.Hook.Implemented == true {
 					fmt.Println(instruction.StringHook())
@@ -167,7 +178,6 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 
 func HookInvalid(emu *WinEmulator) func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
 	return func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
-		fmt.Println(emu.CPU.ReadRegisters())
 		switch access {
 		case uc.MEM_WRITE, uc.MEM_WRITE_UNMAPPED, uc.MEM_WRITE_PROT:
 			fmt.Fprintf(os.Stderr, "Invalid Write: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
@@ -175,7 +185,6 @@ func HookInvalid(emu *WinEmulator) func(mu uc.Unicorn, access int, addr uint64, 
 			fmt.Fprintf(os.Stderr, "Invalid Read: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
 		case uc.MEM_FETCH, uc.MEM_FETCH_UNMAPPED, uc.MEM_FETCH_PROT:
 			fmt.Fprintf(os.Stderr, "Invalid Fetch: addresss = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
-			fmt.Println(mu.MemRead(0x041E58C, 4))
 		default:
 			fmt.Fprintf(os.Stderr, "unknown memory error: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
 		}

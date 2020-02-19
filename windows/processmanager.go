@@ -3,10 +3,11 @@ package windows
 import (
 	"fmt"
 	"math"
+	"unsafe"
 )
 
 type ProcessManager struct {
-	numberOfProcesses uint32
+	numberOfProcesses uint64
 	processList       []Process
 }
 type Process struct {
@@ -765,7 +766,7 @@ func (p *ProcessManager) getProcessEntries() []ProcessEntry {
 }
 
 func (p *ProcessManager) startProcess(parameters map[string]interface{}) bool {
-	newProcess := Process{cntUsage: 0, th32DefaultHeapID: 0, th32ModuleID: 0, dwFlags: 0}
+	newProcess := Process{dwSize: uint32(unsafe.Sizeof(ProcessEntry{})), cntUsage: 0, th32DefaultHeapID: 0, th32ModuleID: 0, dwFlags: 0}
 	for parameter, value := range parameters {
 		//Any new parameter should be added here with no headache of changing the function everywhere.
 		switch parameter {

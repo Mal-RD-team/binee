@@ -8,12 +8,13 @@ import (
 )
 
 type Handle struct {
-	Path   string
-	Access int32
-	File   *os.File
-	Info   os.FileInfo
-	RegKey *RegKey
-	Thread *Thread
+	Path     string
+	Access   int32
+	File     *os.File
+	Info     os.FileInfo
+	RegKey   *RegKey
+	Thread   *Thread
+	Snapshot *Snapshot
 }
 
 func (handle *Handle) Close() {

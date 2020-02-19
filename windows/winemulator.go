@@ -2,6 +2,7 @@ package windows
 
 import (
 	"encoding/binary"
+	"github.com/carbonblack/binee/util"
 	"io/ioutil"
 	"os"
 	"sort"
