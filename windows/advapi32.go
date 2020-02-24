@@ -2,7 +2,6 @@ package windows
 
 import (
 	"encoding/binary"
-
 	"github.com/carbonblack/binee/util"
 )
 
@@ -30,7 +29,57 @@ func startServiceCtrlDispatcher(emu *WinEmulator, addr uint64, wide bool) Servic
 	entry.ServiceProc = procAddr
 	return entry
 }
+func getComputerName(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	sizeRaw := make([]byte, 4)
+	err := emu.Uc.MemReadInto(sizeRaw, in.Args[1])
+	if err != nil {
+		return SkipFunctionStdCall(true, 0)
+	}
+	size := binary.LittleEndian.Uint32(sizeRaw)
 
+	//Writes the size to second parameter anyways.
+	rawLength := make([]byte, 4)
+	binary.LittleEndian.PutUint32(rawLength, uint32(len(emu.Opts.ComputerName)+1))
+	err = emu.Uc.MemWrite(in.Args[1], rawLength)
+	if len(emu.Opts.ComputerName)+1 > int(size) {
+		emu.setLastError(ERROR_INSUFFICIENT_BUFFER)
+		return SkipFunctionStdCall(true, 0)
+	}
+	if wide {
+		wideString := util.ASCIIToWinWChar(emu.Opts.ComputerName)
+		wideString = append(wideString, 0, 0)
+		emu.Uc.MemWrite(in.Args[0], wideString)
+	} else {
+		emu.Uc.MemWrite(in.Args[0], append([]byte(emu.Opts.ComputerName), 0))
+	}
+	return SkipFunctionStdCall(true, 1)
+}
+
+func getUsername(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	sizeRaw := make([]byte, 4)
+	err := emu.Uc.MemReadInto(sizeRaw, in.Args[1])
+	if err != nil {
+		return SkipFunctionStdCall(true, 0)
+	}
+	size := binary.LittleEndian.Uint32(sizeRaw)
+
+	//Writes the size to second parameter anyways.
+	rawLength := make([]byte, 4)
+	binary.LittleEndian.PutUint32(rawLength, uint32(len(emu.Opts.User)+1))
+	err = emu.Uc.MemWrite(in.Args[1], rawLength)
+	if len(emu.Opts.User)+1 > int(size) {
+		emu.setLastError(ERROR_INSUFFICIENT_BUFFER)
+		return SkipFunctionStdCall(true, 0)
+	}
+	if wide {
+		wideString := util.ASCIIToWinWChar(emu.Opts.User)
+		wideString = append(wideString, 0, 0)
+		emu.Uc.MemWrite(in.Args[0], wideString)
+	} else {
+		emu.Uc.MemWrite(in.Args[0], append([]byte(emu.Opts.User), 0))
+	}
+	return SkipFunctionStdCall(true, 1)
+}
 func AdvApi32Hooks(emu *WinEmulator) {
 	emu.AddHook("", "StartServiceCtrlDispatcherA", &Hook{
 		Parameters: []string{"v:lpServiceStartTable"},
@@ -40,10 +89,31 @@ func AdvApi32Hooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(true, 0x1)(emu, in)
 		},
 	})
-
-	emu.AddHook("", "CryptAcquireContextA", &Hook{
-		Parameters: []string{"phProv", "a:szContainer", "a:szProvider", "dwProvType", "dwFlags"},
+	emu.AddHook("", "GetUserNameA", &Hook{
+		Parameters: []string{"lpBuffer", "pcbBuffer"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return getUsername(emu, in, false)(emu, in)
+		},
 	})
+	emu.AddHook("", "GetUserNameW", &Hook{
+		Parameters: []string{"lpBuffer", "pcbBuffer"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return getUsername(emu, in, true)(emu, in)
+		},
+	})
+	emu.AddHook("", "GetComputerNameA", &Hook{
+		Parameters: []string{"lpBuffer", "pcbBuffer"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return getComputerName(emu, in, false)(emu, in)
+		},
+	})
+	emu.AddHook("", "GetComputerNameW", &Hook{
+		Parameters: []string{"lpBuffer", "pcbBuffer"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return getComputerName(emu, in, true)(emu, in)
+		},
+	})
+
 	emu.AddHook("", "StartServiceCtrlDispatcherW", &Hook{
 		Parameters: []string{"v:lpServiceStartTable"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {

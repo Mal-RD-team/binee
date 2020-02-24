@@ -33,6 +33,39 @@ type StartupInfo struct {
 	StdError    uint32
 }
 
+//HANDLE CreateFileMappingW(
+//  HANDLE                hFile,
+//  LPSECURITY_ATTRIBUTES lpFileMappingAttributes,
+//  DWORD                 flProtect,
+//  DWORD                 dwMaximumSizeHigh,
+//  DWORD                 dwMaximumSizeLow,
+//  LPCWSTR               lpName
+//);
+func createFileMapping(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	fileHandle, ok := emu.Handles[in.Args[0]]
+	if !ok {
+		emu.setLastError(ERROR_INVALID_HANDLE)
+		return SkipFunctionStdCall(true, 0)
+	}
+	file := fileHandle.File
+	fileSize, err := file.Seek(0, io.SeekEnd)
+	if err != nil {
+		emu.setLastError(ERROR_INVALID_HANDLE)
+		return SkipFunctionStdCall(true, 0)
+	}
+	fileData := make([]byte, fileSize)
+	_, err = file.Read(fileData)
+	if err != nil {
+		emu.setLastError(ERROR_INVALID_HANDLE)
+		return SkipFunctionStdCall(true, 0)
+	}
+	addr := emu.Heap.Malloc(uint64(fileSize))
+	err = emu.Uc.MemWrite(addr, fileData)
+	if err != nil {
+		return SkipFunctionStdCall(true, 0)
+	}
+	return SkipFunctionStdCall(true, addr)
+}
 func enumDeviceDrivers(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
 
 	if emu.PtrSize == 4 {
@@ -57,11 +90,41 @@ func enumDeviceDrivers(emu *WinEmulator, in *Instruction) func(emu *WinEmulator,
 	return SkipFunctionStdCall(true, 1)
 }
 
-//DWORD GetDeviceDriverBaseNameW(
-//LPVOID ImageBase,
-//LPWSTR lpBaseName,
-//DWORD  nSize
-//);
+func getDriveType(emu *WinEmulator, in *Instruction, wide bool) func(*WinEmulator, *Instruction) bool {
+	/*the purpose of this function is give the binary the idea
+	 the windows has multiple drives with different types, to
+	be able to monitor whatever action is being done*/
+	var driveName string
+	if wide {
+		driveName = util.ReadWideChar(emu.Uc, in.Args[0], 0)
+	} else {
+		driveName = util.ReadASCII(emu.Uc, in.Args[0], 0)
+	}
+	//Drives has the scheme of "A:\"
+
+	returnCode := uint64(1) //DRIVE_NO_ROOT_DIR
+	switch driveName[0] {
+	case 'A':
+		returnCode = 0 //DRIVE_UNKNOWN
+		break
+	case 'C':
+		returnCode = 3 //DRIVE_FIXED
+		break
+	case 'D':
+		returnCode = 2 //DRIVE_REMOVABLE
+		break
+	case 'E':
+		returnCode = 4 //DRIVE_REMOTE
+		break
+	case 'F':
+		returnCode = 5 //DRIVE_CDROM
+		break
+	case 'G':
+		returnCode = 6 //DRIVE_RAMDISK
+		break
+	}
+	return SkipFunctionStdCall(true, returnCode)
+}
 
 func getDeviceDriverBaseName(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	ret := 0
@@ -566,10 +629,22 @@ func KernelbaseHooks(emu *WinEmulator) {
 	//	},
 	//})
 
+	emu.AddHook("", "CreateFileMappingA", &Hook{
+		Parameters: []string{"hFile", "lpFileMappingAttributes", "flProtect", "dwMaximumSizeHigh", "dwMaximumSizeLow", "a:lpName"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return createFileMapping(emu, in, true)(emu, in)
+		},
+	})
+	emu.AddHook("", "CreateFileMappingW", &Hook{
+		Parameters: []string{"hFile", "lpFileMappingAttributes", "flProtect", "dwMaximumSizeHigh", "dwMaximumSizeLow", "w:lpName"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return createFileMapping(emu, in, true)(emu, in)
+		},
+	})
+
 	emu.AddHook("", "EnumDeviceDrivers", &Hook{
 		Parameters: []string{"lpImageBase", "cb", "lpcbNeeded"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
-
 			return enumDeviceDrivers(emu, in)(emu, in)
 		},
 	})
@@ -577,6 +652,19 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{"ImageBase", "lpBaseName", "nSize"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			return getDeviceDriverBaseName(emu, in, true)(emu, in)
+		},
+	})
+
+	emu.AddHook("", "GetDriveTypeA", &Hook{
+		Parameters: []string{"a:lpRootPathName"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return getDriveType(emu, in, false)(emu, in)
+		},
+	})
+	emu.AddHook("", "GetDriveTypeW", &Hook{
+		Parameters: []string{"w:lpRootPathName"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return getDriveType(emu, in, true)(emu, in)
 		},
 	})
 	emu.AddHook("", "DeleteCriticalSection", &Hook{
@@ -1229,7 +1317,6 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{"CodePage", "dwFlags", "w:lpWideCharStr", "cchWideChar", "lpMultiByteStr", "cbMultiByte", "lpDefaultChar", "lpUsedDefaultChar"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			mb := util.ReadASCII(emu.Uc, in.Args[2], 0)
-
 			// check if multibyte function is only getting buffer size
 			if in.Args[5] == 0x0 {
 				return SkipFunctionStdCall(true, uint64(len(mb))*2+2)(emu, in)
@@ -1266,12 +1353,39 @@ func KernelbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "MapViewOfFile", &Hook{
 		Parameters: []string{"hFileMappingObject", "dwDesiredAccess", "dwFileOffsetHigh", "dwFileOffsetLow", "dwNumberOfBytesToMap"},
 	})
-	//LONG GetCurrentPackageId(
-	//	UINT32 *bufferLength,
-	//	BYTE   *buffer
-	//);
+
 	emu.AddHook("", "GetCurrentPackageId", &Hook{
 		Parameters: []string{"bufferLength", "buffer"},
 		//Fn:SkipFunctionStdCall(true,0),
+	})
+	//
+	//BOOL GetDiskFreeSpaceA(
+	//	LPCSTR  lpRootPathName,
+	//	LPDWORD lpSectorsPerCluster,
+	//	LPDWORD lpBytesPerSector,
+	//	LPDWORD lpNumberOfFreeClusters,
+	//	LPDWORD lpTotalNumberOfClusters
+	//);
+	emu.AddHook("", "GetDiskFreeSpaceA", &Hook{
+		Parameters: []string{"a:RootPathName", "lpSectorsPerCluster", "lpBytesPerSector", "lpNumberOfFreeClusters", "lpTotalNumberOfClusters"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0)(emu, in)
+		},
+	})
+	emu.AddHook("", "GetDiskFreeSpaceW", &Hook{
+		Parameters: []string{"a:RootPathName", "lpSectorsPerCluster", "lpBytesPerSector", "lpNumberOfFreeClusters", "lpTotalNumberOfClusters"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0)(emu, in)
+		},
+	})
+	//BOOL CreatePipe(
+	//  PHANDLE               hReadPipe,
+	//  PHANDLE               hWritePipe,
+	//  LPSECURITY_ATTRIBUTES lpPipeAttributes,
+	//  DWORD                 nSize
+	//);
+	emu.AddHook("", "CreatePipe", &Hook{
+		Parameters: []string{"hReadPipe", "hWritePipe", "lpPipeAttributes", "nSize"},
+		Fn:         SkipFunctionStdCall(true, 0),
 	})
 }

@@ -34,12 +34,12 @@ func WinnlsHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "GetThreadLocale", &Hook{
 		Parameters: []string{},
-		//Fn: func(emu *WinEmulator, in *Instruction) bool {
-		//	var ret uint32
-		//	ret = uint32(emu.Opts.CurrentLocale)
-		//	ret |= uint32(emu.Opts.LocaleSortOrder) << 16
-		//	return SkipFunctionStdCall(true, uint64(ret))(emu, in)
-		//},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			var ret uint32
+			ret = uint32(emu.Opts.CurrentLocale)
+			ret |= uint32(emu.Opts.LocaleSortOrder) << 16
+			return SkipFunctionStdCall(true, uint64(ret))(emu, in)
+		},
 	})
 	emu.AddHook("", "SetThreadUILanguage", &Hook{
 		Parameters: []string{"langId"},

@@ -922,7 +922,7 @@ func (pe *PeFile) readDirectoryRecursively(rootRva uint32, currentDirectoryRva u
 			r.Read(wideString)
 			resourceDirectoryEntry.Name = WideStringToString(wideString, int(length*2))
 		} else {
-			resourceDirectoryEntry.ID = id
+			resourceDirectoryEntry.ID = id & 0xffff
 		}
 		isDirectory := rdeRaw.OffsetToData&(0x80000000) > 0
 		address := rdeRaw.OffsetToData &^ (0x80000000)

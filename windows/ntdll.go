@@ -248,6 +248,15 @@ func NtdllHooks(emu *WinEmulator) {
 	emu.AddHook("", "RtlCharToInteger", &Hook{
 		Parameters: []string{"String", "Base", "Value"},
 	})
+	emu.AddHook("", "RtlExitUserThread", &Hook{
+		Parameters: []string{"dwExitCode"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			emu.Scheduler.ThreadEnded(emu.Scheduler.CurThreadId())
+			return true
+		},
+
+		//Fn:SkipFunctionStdCall(true,1),
+	})
 	emu.AddHook("", "RtlCreateHeap", &Hook{
 		Parameters: []string{"Flags", "HeapBase", "ReserveSize", "CommitSize", "Lock", "Parameters"},
 		Fn:         SkipFunctionStdCall(true, 0x123456),
@@ -256,7 +265,9 @@ func NtdllHooks(emu *WinEmulator) {
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
 	})
-
+	emu.AddHook("", "RtlComputeCrc32", &Hook{
+		Parameters: []string{"dwInitial", "pData", "iLen"},
+	})
 	emu.AddHook("", "RtlDebugPrintTimes", &Hook{
 		Parameters: []string{""},
 	})

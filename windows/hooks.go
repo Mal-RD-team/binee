@@ -50,6 +50,8 @@ func (emu *WinEmulator) LoadHooks() {
 	MemoryApiHooks(emu)
 	Internal(emu)
 	ToolHelpHooks(emu)
+	WininetHooks(emu)
+	CryptHooks(emu)
 }
 func (emu *WinEmulator) SetupHooks() error {
 	emu.Uc.HookAdd(uc.HOOK_CODE, HookCode(emu), 1, 0)
@@ -82,10 +84,6 @@ func (emu *WinEmulator) Start() error {
 	}
 
 	return nil
-}
-func (emu *WinEmulator) Mn3m(addr uint64, size uint64) uint32 {
-	z, _ := emu.Uc.MemRead(addr, size)
-	return binary.LittleEndian.Uint32(z)
 }
 
 func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
@@ -188,6 +186,7 @@ func HookInvalid(emu *WinEmulator) func(mu uc.Unicorn, access int, addr uint64, 
 		default:
 			fmt.Fprintf(os.Stderr, "unknown memory error: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
 		}
+
 		return true
 	}
 }

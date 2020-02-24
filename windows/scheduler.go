@@ -65,7 +65,7 @@ func (self *ScheduleManager) DoSchedule() {
 	}
 
 	if nextThread == nil {
-		fmt.Errorf("No active threads available to run")
+		fmt.Errorf("no active threads available to run")
 		return
 	}
 
@@ -136,8 +136,8 @@ func (self *ScheduleManager) NewThread(eip uint64, stack uint64, parameter uint6
 
 func (self *ScheduleManager) DelThread(threadId int) {
 	newThreads := make([]*Thread, 0, len(self.threads))
-	for i, t := range self.threads {
-		if i+1 != threadId {
+	for _, t := range self.threads {
+		if t.ThreadId != threadId {
 			newThreads = append(newThreads, t)
 		}
 	}

@@ -6,6 +6,7 @@
       <w>snapmodule</w>
       <w>snapprocess</w>
       <w>snapthread</w>
+      <w>wsprintf</w>
     </words>
   </dictionary>
 </component>

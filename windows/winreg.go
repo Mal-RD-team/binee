@@ -71,6 +71,17 @@ func WinregHooks(emu *WinEmulator) {
 		},
 	})
 
+	emu.AddHook("", "RegCreateKeyExW", &Hook{
+		Parameters: []string{"hkey", "w:lpSubKey", "phkResult"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			in.Hook.Values[0] = hkeyMap(in.Args[0])
+			in.Hook.Parameters[0] = "s:hKey"
+			hkey := hkeyMap(in.Args[0])
+			subkey := util.ReadWideChar(emu.Uc, in.Args[1], 0)
+			return createRegKey(emu, in, hkey, subkey)(emu, in)
+		},
+	})
+
 	emu.AddHook("", "RegDeleteKeyA", &Hook{
 		Parameters: []string{"hkey", "a:lpSubKey"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
@@ -235,6 +246,23 @@ func WinregHooks(emu *WinEmulator) {
 		},
 	})
 
+	emu.AddHook("", "RegSetValueW", &Hook{
+		Parameters: []string{"hKey", "a:lpSubKey", "dwType", "lpData", "cbData"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			// update print view
+			in.Hook.Values[0] = hkeyMap(in.Args[0])
+			in.Hook.Parameters[0] = "s:hKey"
+			hkey := hkeyMap(in.Args[0])
+			subKey := util.ReadWideChar(emu.Uc, in.Args[1], 0)
+			value := util.ReadWideChar(emu.Uc, in.Args[3], 0)
+			reg := &Reg{hkey + "\\" + subKey, value, make(map[string]*Reg)}
+			if err := emu.Registry.Insert(hkey, subKey, reg); err != nil {
+				return SkipFunctionStdCall(true, 0x57)(emu, in)
+			}
+			return SkipFunctionStdCall(true, ERROR_SUCCESS)(emu, in)
+		},
+	})
+
 	emu.AddHook("", "RegUnLoadKeyW", &Hook{
 		Parameters: []string{"hKey", "lpSubKey"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
@@ -242,6 +270,47 @@ func WinregHooks(emu *WinEmulator) {
 			in.Hook.Values[0] = hkeyMap(in.Args[0])
 			in.Hook.Parameters[0] = "s:hKey"
 			return SkipFunctionStdCall(true, 0x0)(emu, in)
+		},
+	})
+	//
+	//LSTATUS RegSetValueExA(
+	//	HKEY       hKey,
+	//	LPCSTR     lpValueName,
+	//	DWORD      Reserved,
+	//	DWORD      dwType,
+	//const BYTE *lpData,
+	//DWORD      cbData
+	//);
+	emu.AddHook("", "RegSetValueExA", &Hook{
+		Parameters: []string{"hKey", "a:lpValueName", "Reserved", "dwType", "a:lpData", "cbData"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			// update print view
+			in.Hook.Values[0] = hkeyMap(in.Args[0])
+			in.Hook.Parameters[0] = "s:hKey"
+			hkey := hkeyMap(in.Args[0])
+			subKey := util.ReadASCII(emu.Uc, in.Args[1], 0)
+			value := util.ReadASCII(emu.Uc, in.Args[4], 0)
+			reg := &Reg{hkey + "\\" + subKey, value, make(map[string]*Reg)}
+			if err := emu.Registry.Insert(hkey, subKey, reg); err != nil {
+				return SkipFunctionStdCall(true, 0x57)(emu, in)
+			}
+			return SkipFunctionStdCall(true, ERROR_SUCCESS)(emu, in)
+		},
+	})
+	emu.AddHook("", "RegSetValueExW", &Hook{
+		Parameters: []string{"hKey", "w:lpValueName", "Reserved", "dwType", "w:lpData", "cbData"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			// update print view
+			in.Hook.Values[0] = hkeyMap(in.Args[0])
+			in.Hook.Parameters[0] = "s:hKey"
+			hkey := hkeyMap(in.Args[0])
+			subKey := util.ReadWideChar(emu.Uc, in.Args[1], 0)
+			value := util.ReadASCII(emu.Uc, in.Args[4], 0)
+			reg := &Reg{hkey + "\\" + subKey, value, make(map[string]*Reg)}
+			if err := emu.Registry.Insert(hkey, subKey, reg); err != nil {
+				return SkipFunctionStdCall(true, 0x57)(emu, in)
+			}
+			return SkipFunctionStdCall(true, ERROR_SUCCESS)(emu, in)
 		},
 	})
 

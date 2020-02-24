@@ -850,6 +850,8 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 		emu.writeLdrEntry(ldrEntry, "Initialization")
 	}
 
+	//TODO: Loading non-loaded libraries if needed for forwarding.
+
 	// update the imports table for the current PE so that imports resolve correctly
 	for _, importInfo := range pe.Imports {
 		dllName := importInfo.DllName
@@ -999,7 +1001,6 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 			emu.Uc.MemWrite(dll.ImageBase()+uint64(dll.Sections[i].VirtualAddress), dll.Sections[i].Raw)
 		}
 	}
-
 	//setup dllmain stack
 	if calldllmain {
 		//this is the incorrect order, need to make sure kernel32 starts first so it gets called last
@@ -1009,7 +1010,6 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 			dll := peMap[name]
 			if !strings.HasPrefix(name, "api") && !strings.HasPrefix(name, "ucrt") {
 				if dll.EntryPoint() != 0 {
-					fmt.Println(dll.Name)
 					emu.setupDllMainCallstack(dll)
 				}
 			}
