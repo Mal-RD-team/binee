@@ -269,11 +269,6 @@ func getEnvironmentStrings(emu *WinEmulator, in *Instruction, wide bool) func(em
 
 }
 
-//HANDLE OpenFileMappingA(
-//DWORD  dwDesiredAccess,
-//BOOL   bInheritHandle,
-//LPCSTR lpName
-//);
 func openFileMapping(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	var path string
 	if wide == false {
@@ -289,6 +284,48 @@ func openFileMapping(emu *WinEmulator, in *Instruction, wide bool) func(emu *Win
 	} else {
 		return SkipFunctionStdCall(true, 0xffffffff)
 	}
+}
+
+func expandEnvironmentStrings(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	var formatString string
+	if wide {
+		formatString = util.ReadWideChar(emu.Uc, in.Args[0], 0)
+	} else {
+		formatString = util.ReadASCII(emu.Uc, in.Args[0], 0)
+	}
+	re := regexp.MustCompile("%\\S+%")
+	match_indices := re.FindAllStringIndex(formatString, -1)
+	var envVariables []string
+	for _, i := range match_indices {
+		envVariables = append(envVariables, formatString[i[0]+1:i[1]-1])
+	}
+	var actualValues []string
+	for _, envVariable := range envVariables {
+		var val string
+		for _, data := range emu.Opts.Env {
+			if data.Key == envVariable {
+				val = data.Value
+				break
+			}
+		}
+		if val == "" {
+			SkipFunctionStdCall(true, 0)
+		} else {
+			actualValues = append(actualValues, val)
+		}
+	}
+	for j, i := range match_indices {
+
+		formatString = formatString[0:i[0]] + actualValues[j] + formatString[i[1]:]
+	}
+	var rawString []byte
+	if wide {
+		rawString = append(util.ASCIIToWinWChar(formatString), 0, 0)
+	} else {
+		rawString = append([]byte(formatString), 0)
+	}
+	emu.Uc.MemWrite(in.Args[1], rawString)
+	return SkipFunctionStdCall(true, uint64(len(formatString)))
 }
 
 //LPVOID MapViewOfFile(
@@ -684,6 +721,12 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return false
 		},
 	})
+	emu.AddHook("", "RtlExitUserProcess", &Hook{
+		Parameters: []string{"uExitCode"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return false
+		},
+	})
 	emu.AddHook("", "FlsAlloc", &Hook{
 		Parameters: []string{"lpCallback"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
@@ -713,10 +756,12 @@ func KernelbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "EnterCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
+		NoLog:      true,
 	})
 	emu.AddHook("", "RtlEnterCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
+		NoLog:      true,
 	})
 	emu.AddHook("", "FlsFree", &Hook{
 		Parameters: []string{"dwFlsIndex"},
@@ -822,30 +867,29 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
 	emu.AddHook("", "GetModuleFileNameA", &Hook{
-		Parameters: []string{"hModule", "a:lpFilename", "nSize"},
+		Parameters: []string{"hModule", "lpFilename", "nSize"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			f := ""
 			if in.Args[0] == 0x0 {
 				f = "C:\\Users\\" + emu.Opts.User + "\\" + filepath.Base(emu.Binary)
-				emu.Uc.MemWrite(in.Args[1], []byte(f))
+				emu.Uc.MemWrite(in.Args[1], append([]byte(f), 0))
 			} else {
 				f = "C:\\Windows\\System32\\" + filepath.Base(emu.Binary)
-				emu.Uc.MemWrite(in.Args[1], []byte(f))
+				emu.Uc.MemWrite(in.Args[1], append([]byte(f), 0))
 			}
 			return SkipFunctionStdCall(true, uint64(len(f)+1))(emu, in)
 		},
 	})
 	emu.AddHook("", "GetModuleFileNameW", &Hook{
-		Parameters: []string{"hModule", "a:lpFilename", "nSize"},
+		Parameters: []string{"hModule", "lpFilename", "nSize"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			f := ""
 			if in.Args[0] == 0x0 {
 				f = "C:\\Users\\" + emu.Opts.User + "\\" + filepath.Base(emu.Binary)
-				emu.Uc.MemWrite(in.Args[1], util.ASCIIToWinWChar(f))
 			} else {
 				f = "C:\\Windows\\System32\\" + filepath.Base(emu.Binary)
-				emu.Uc.MemWrite(in.Args[1], util.ASCIIToWinWChar(f))
 			}
+			emu.Uc.MemWrite(in.Args[1], append(util.ASCIIToWinWChar(f), 0, 0))
 			return SkipFunctionStdCall(true, uint64(len(f)+2))(emu, in)
 		},
 	})
@@ -1101,10 +1145,12 @@ func KernelbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "InitializeCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0x1),
+		NoLog:      true,
 	})
 	emu.AddHook("", "InitializeCriticalSectionEx", &Hook{
 		Parameters: []string{"lpCriticalSection", "dwSpinCount", "Flags"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
+		NoLog:      true,
 	})
 	emu.AddHook("", "InitializeCriticalSectionAndSpinCount", &Hook{
 		Parameters: []string{"lpCriticalSection", "dwSpinCount"},
@@ -1125,10 +1171,12 @@ func KernelbaseHooks(emu *WinEmulator) {
 	emu.AddHook("", "LeaveCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
+		NoLog:      true,
 	})
 	emu.AddHook("", "RtlLeaveCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
+		NoLog:      true,
 	})
 	emu.AddHook("", "LCMapStringA", &Hook{
 		Parameters: []string{"Locale", "dwMapFlags", "lpSrcStr", "cchSrc", "lpDestStr", "cchDest"},
@@ -1358,14 +1406,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{"bufferLength", "buffer"},
 		//Fn:SkipFunctionStdCall(true,0),
 	})
-	//
-	//BOOL GetDiskFreeSpaceA(
-	//	LPCSTR  lpRootPathName,
-	//	LPDWORD lpSectorsPerCluster,
-	//	LPDWORD lpBytesPerSector,
-	//	LPDWORD lpNumberOfFreeClusters,
-	//	LPDWORD lpTotalNumberOfClusters
-	//);
+
 	emu.AddHook("", "GetDiskFreeSpaceA", &Hook{
 		Parameters: []string{"a:RootPathName", "lpSectorsPerCluster", "lpBytesPerSector", "lpNumberOfFreeClusters", "lpTotalNumberOfClusters"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
@@ -1378,14 +1419,23 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(true, 0)(emu, in)
 		},
 	})
-	//BOOL CreatePipe(
-	//  PHANDLE               hReadPipe,
-	//  PHANDLE               hWritePipe,
-	//  LPSECURITY_ATTRIBUTES lpPipeAttributes,
-	//  DWORD                 nSize
-	//);
+
 	emu.AddHook("", "CreatePipe", &Hook{
 		Parameters: []string{"hReadPipe", "hWritePipe", "lpPipeAttributes", "nSize"},
 		Fn:         SkipFunctionStdCall(true, 0),
 	})
+
+	emu.AddHook("", "ExpandEnvironmentStringsA", &Hook{
+		Parameters: []string{"a:lpSrc", "lpDst", "nSize"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return expandEnvironmentStrings(emu, in, false)(emu, in)
+		},
+	})
+	emu.AddHook("", "ExpandEnvironmentStringsW", &Hook{
+		Parameters: []string{"w:lpSrc", "lpDst", "nSize"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return expandEnvironmentStrings(emu, in, true)(emu, in)
+		},
+	})
+
 }
