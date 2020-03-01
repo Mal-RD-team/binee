@@ -55,7 +55,6 @@ func freeVirtualMemory(emu *WinEmulator, in *Instruction) bool {
 	// Get the values at those pointers
 	sizeBytes, _ := emu.Uc.MemRead(sizePtr, emu.PtrSize)
 	startBytes, _ := emu.Uc.MemRead(baseAddr, emu.PtrSize)
-
 	// Convert to uint64
 	size := uint64(0)
 	start := uint64(0)
@@ -66,7 +65,6 @@ func freeVirtualMemory(emu *WinEmulator, in *Instruction) bool {
 		size = binary.LittleEndian.Uint64(sizeBytes)
 		start = binary.LittleEndian.Uint64(startBytes)
 	}
-
 	if size == 0 && emu.Heap.Free(start) == 1 {
 		return SkipFunctionStdCall(true, 0x0)(emu, in)
 	}
@@ -240,6 +238,7 @@ func NtdllHooks(emu *WinEmulator) {
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			return SkipFunctionStdCall(true, emu.Heap.Malloc(in.Args[2]))(emu, in)
 		},
+		NoLog: true,
 	})
 	emu.AddHook("", "RtlAcquirePebLock", &Hook{Parameters: []string{}})
 	emu.AddHook("", "RtlAcquireSRWLockExclusive", &Hook{
@@ -254,7 +253,6 @@ func NtdllHooks(emu *WinEmulator) {
 			emu.Scheduler.ThreadEnded(emu.Scheduler.CurThreadId())
 			return true
 		},
-
 		//Fn:SkipFunctionStdCall(true,1),
 	})
 	emu.AddHook("", "RtlCreateHeap", &Hook{

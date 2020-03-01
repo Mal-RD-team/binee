@@ -73,9 +73,6 @@ func loadString(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmula
 }
 func WinuserHooks(emu *WinEmulator) {
 
-	//LPSTR CharNextA(
-	//	LPCSTR lpsz
-	//);
 	emu.AddHook("", "CharNextA", &Hook{
 		Parameters: []string{"a:lpsz"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
@@ -86,6 +83,7 @@ func WinuserHooks(emu *WinEmulator) {
 			}
 			return SkipFunctionStdCall(true, lpsz+1)(emu, in)
 		},
+		NoLog: true,
 	})
 	//Currently only handling single byte characters
 	emu.AddHook("", "CharPrevA", &Hook{
