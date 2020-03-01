@@ -764,7 +764,24 @@ func (p *ProcessManager) getProcessEntries() []ProcessEntry {
 	}
 	return processEntries
 }
-
+func (p *ProcessManager) terminateProcess(index int) bool {
+	index -= 1
+	succ := false
+	if index >= 0 && uint64(index) < p.numberOfProcesses {
+		p.processList = append(p.processList[0:index], p.processList[index+1:]...)
+		p.numberOfProcesses -= 1
+		succ = true
+	}
+	return succ
+}
+func (p *ProcessManager) openProcess(processID uint32) int {
+	for i, proc := range p.processList {
+		if proc.the32ProcessID == processID {
+			return i + 1
+		}
+	}
+	return -1
+}
 func (p *ProcessManager) startProcess(parameters map[string]interface{}) bool {
 	newProcess := Process{dwSize: uint32(unsafe.Sizeof(ProcessEntry{})), cntUsage: 0, th32DefaultHeapID: 0, th32ModuleID: 0, dwFlags: 0}
 	for parameter, value := range parameters {
