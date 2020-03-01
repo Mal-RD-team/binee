@@ -212,6 +212,9 @@ func UcrtBase32Hooks(emu *WinEmulator) {
 	emu.AddHook("", "strcat", &Hook{
 		Parameters: []string{"a:string1", "a:string2"},
 	})
+	emu.AddHook("", "strncmp", &Hook{
+		Parameters: []string{"a:string1", "a:string2", "size"},
+	})
 	emu.AddHook("", "strcmp", &Hook{
 		Parameters: []string{"a:string1", "a:string2"},
 	})

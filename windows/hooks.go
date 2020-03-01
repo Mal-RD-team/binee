@@ -51,7 +51,9 @@ func (emu *WinEmulator) LoadHooks() {
 	Internal(emu)
 	ToolHelpHooks(emu)
 	WininetHooks(emu)
+	ShwlapiHooks(emu)
 	CryptHooks(emu)
+	MprHook(emu)
 }
 func (emu *WinEmulator) SetupHooks() error {
 	emu.Uc.HookAdd(uc.HOOK_CODE, HookCode(emu), 1, 0)

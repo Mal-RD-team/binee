@@ -9,6 +9,15 @@ import (
 //import "fmt"
 
 func FileapiHooks(emu *WinEmulator) {
+
+	emu.AddHook("", "MoveFileExA", &Hook{
+		Parameters: []string{"a:lpExistingFileName", "a:lpNewFileName", "dwFlags"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
+	emu.AddHook("", "MoveFileExW", &Hook{
+		Parameters: []string{"a:lpExistingFileName", "a:lpNewFileName", "dwFlags"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
 	emu.AddHook("", "CreateDirectoryA", &Hook{
 		Parameters: []string{"a:lpPathName", "lpSecurityAttributes"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
@@ -29,6 +38,18 @@ func FileapiHooks(emu *WinEmulator) {
 		Parameters: []string{"a:lpFileName", "lpFindFileData"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
+	emu.AddHook("", "FindNextFileA", &Hook{
+		Parameters: []string{"hFindFile", "lpFindFileData"},
+		Fn:         SkipFunctionStdCall(true, 0x0),
+	})
+	emu.AddHook("", "GetLogicalDrives", &Hook{
+		Parameters: []string{},
+		//The return value is bitmask representing the currently available disk drives.
+		//We will assume we have A,B,C,D,E,F meaning 0x0000003f
+		//Where 63 : 111111
+		Fn: SkipFunctionStdCall(true, 0x3f),
+	})
+
 	emu.AddHook("", "FlushFileBuffers", &Hook{
 		Parameters: []string{"hFile"},
 		Fn:         SkipFunctionStdCall(true, 0x1),

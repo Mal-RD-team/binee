@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -33,14 +34,6 @@ type StartupInfo struct {
 	StdError    uint32
 }
 
-//HANDLE CreateFileMappingW(
-//  HANDLE                hFile,
-//  LPSECURITY_ATTRIBUTES lpFileMappingAttributes,
-//  DWORD                 flProtect,
-//  DWORD                 dwMaximumSizeHigh,
-//  DWORD                 dwMaximumSizeLow,
-//  LPCWSTR               lpName
-//);
 func createFileMapping(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	fileHandle, ok := emu.Handles[in.Args[0]]
 	if !ok {
@@ -119,7 +112,7 @@ func getDriveType(emu *WinEmulator, in *Instruction, wide bool) func(*WinEmulato
 	case 'F':
 		returnCode = 5 //DRIVE_CDROM
 		break
-	case 'G':
+	case 'B':
 		returnCode = 6 //DRIVE_RAMDISK
 		break
 	}

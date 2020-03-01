@@ -81,6 +81,22 @@ func getUsername(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmul
 	return SkipFunctionStdCall(true, 1)
 }
 func AdvApi32Hooks(emu *WinEmulator) {
+	//BOOL CheckTokenMembership(
+	//	HANDLE TokenHandle,
+	//	PSID   SidToCheck,
+	//	PBOOL  IsMember
+	//);
+	//PVOID FreeSid(
+	//	PSID pSid
+	//);
+	emu.AddHook("", "FreeSid", &Hook{
+		Parameters: []string{"pSide"},
+		Fn:         SkipFunctionStdCall(true, 0),
+	})
+	emu.AddHook("", "CheckTokenMembership", &Hook{
+		Parameters: []string{"TokenHandle", "SidToCheck", "IsMember"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
 	emu.AddHook("", "StartServiceCtrlDispatcherA", &Hook{
 		Parameters: []string{"v:lpServiceStartTable"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
@@ -113,7 +129,6 @@ func AdvApi32Hooks(emu *WinEmulator) {
 			return getComputerName(emu, in, true)(emu, in)
 		},
 	})
-
 	emu.AddHook("", "StartServiceCtrlDispatcherW", &Hook{
 		Parameters: []string{"v:lpServiceStartTable"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {

@@ -28,7 +28,11 @@ func SyncapiHooks(emu *WinEmulator) {
 		},
 	})
 	emu.AddHook("", "OpenMutexA", &Hook{
-		Parameters: []string{"lpMutexAttributes", "bInitialOwner", "lpName"},
+		Parameters: []string{"lpMutexAttributes", "bInitialOwner", "a:lpName"},
+		Fn:         SkipFunctionStdCall(true, 0x1337),
+	})
+	emu.AddHook("", "OpenMutexW", &Hook{
+		Parameters: []string{"lpMutexAttributes", "bInitialOwner", "w:lpName"},
 		Fn:         SkipFunctionStdCall(true, 0x1337),
 	})
 	emu.AddHook("", "ReleaseSRWLockExclusive", &Hook{
