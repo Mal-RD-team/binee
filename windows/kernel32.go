@@ -3,6 +3,8 @@ package windows
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
+	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	"io"
 	"path/filepath"
 	"regexp"
@@ -32,6 +34,74 @@ type StartupInfo struct {
 	StdInput    uint32
 	StdOutput   uint32
 	StdError    uint32
+}
+
+func commandLineToArgv(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	numOfArgs := len(emu.Args)
+	var buff []byte
+	if emu.UcMode == uc.MODE_32 {
+		buff = make([]byte, emu.PtrSize)
+		binary.LittleEndian.PutUint32(buff, uint32(numOfArgs))
+	} else {
+		buff = make([]byte, emu.PtrSize)
+		binary.LittleEndian.PutUint64(buff, uint64(numOfArgs))
+	}
+	emu.Uc.MemWrite(in.Args[1], buff)
+
+	var addresses []uint64
+	var addr uint64
+	for i, _ := range emu.Args {
+		if wide {
+			addr = emu.Heap.Malloc(uint64(len(emu.Args[i])+1) * 2)
+			buff = append(util.ASCIIToWinWChar(emu.Args[i]), 0)
+		} else {
+			addr = emu.Heap.Malloc(uint64(len(emu.Args[i]) + 1))
+			buff = append([]byte(emu.Args[i]), 0, 0)
+		}
+		emu.Uc.MemWrite(addr, buff)
+		fmt.Println(util.ReadWideChar(emu.Uc, addr, 0))
+		addresses = append(addresses, addr)
+	}
+	var addressesRaw []byte
+	if emu.UcMode == uc.MODE_32 {
+		for i, _ := range addresses {
+			buff = make([]byte, emu.PtrSize)
+			binary.LittleEndian.PutUint32(buff, uint32(addresses[i]))
+			addressesRaw = append(addressesRaw, buff...)
+		}
+	} else {
+		for i, _ := range addresses {
+			buff = make([]byte, emu.PtrSize)
+			binary.LittleEndian.PutUint64(buff, addresses[i])
+			addressesRaw = append(addressesRaw, buff...)
+		}
+	}
+	addr = emu.Heap.Malloc(uint64(len(addressesRaw)))
+	emu.Uc.MemWrite(addr, addressesRaw)
+	return SkipFunctionStdCall(true, addr)
+}
+func getCommandLine(emu *WinEmulator, in *Instruction, wide bool) bool {
+	//This is a temporary implementation, we should depend on peb.
+
+	length := 0
+	cmd := ""
+	for i, _ := range emu.Args {
+		length += len(emu.Args[i])
+		cmd += emu.Args[i] + " "
+	}
+	cmd = cmd[:len(cmd)-1]
+	var raw []byte
+
+	if wide {
+		raw = append(util.ASCIIToWinWChar(cmd), 0, 0)
+	} else {
+		raw = append([]byte(cmd), 0)
+	}
+	addr := emu.Heap.Malloc(uint64(len(raw)))
+	if err := emu.Uc.MemWrite(addr, raw); err != nil {
+		return SkipFunctionStdCall(true, 0)(emu, in)
+	}
+	return SkipFunctionStdCall(true, addr)(emu, in)
 }
 
 func createFileMapping(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
@@ -800,13 +870,30 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{},
 		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
-	emu.AddHook("", "GetCommandLineW", &Hook{
-		Parameters: []string{},
-		Fn:         SkipFunctionStdCall(true, emu.Argv),
-	})
 	emu.AddHook("", "GetCommandLineA", &Hook{
 		Parameters: []string{},
-		Fn:         SkipFunctionStdCall(true, emu.Argv),
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return getCommandLine(emu, in, false)
+		},
+	})
+	emu.AddHook("", "GetCommandLineW", &Hook{
+		Parameters: []string{},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return getCommandLine(emu, in, true)
+		},
+	})
+
+	emu.AddHook("", "CommandLineToArgvA", &Hook{
+		Parameters: []string{"a:lpCmdLine", "pNumArgs"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return commandLineToArgv(emu, in, false)(emu, in)
+		},
+	})
+	emu.AddHook("", "CommandLineToArgvW", &Hook{
+		Parameters: []string{"w:lpCmdLine", "pNumArgs"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return commandLineToArgv(emu, in, true)(emu, in)
+		},
 	})
 	emu.AddHook("", "GetConsoleMode", &Hook{
 		Parameters: []string{"hConsoleHandle", "lpMode"},
@@ -1324,6 +1411,14 @@ func KernelbaseHooks(emu *WinEmulator) {
 			if handle := emu.Handles[in.Args[0]]; handle != nil {
 				if b, err := emu.Uc.MemRead(in.Args[1], in.Args[2]); err == nil {
 					n, _ := handle.Write(b)
+					//Make sure to write number of bytes written not just return it.
+					buff := make([]byte, emu.PtrSize)
+					if emu.UcMode == uc.MODE_32 {
+						binary.LittleEndian.PutUint32(buff, uint32(n))
+					} else {
+						binary.LittleEndian.PutUint64(buff, uint64(n))
+					}
+					emu.Uc.MemWrite(in.Args[3], buff)
 					return SkipFunctionStdCall(true, uint64(n))(emu, in)
 				}
 			}

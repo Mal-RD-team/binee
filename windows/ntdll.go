@@ -302,6 +302,10 @@ func NtdllHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "RtlFreeHeap", &Hook{
 		Parameters: []string{"HeapHandle", "Flags", "BaseAddress"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			emu.Heap.Free(in.Args[2])
+			return SkipFunctionStdCall(true, 1)(emu, in)
+		},
 	})
 	emu.AddHook("", "RtlNtStatusToDosError", &Hook{
 		Parameters: []string{"Status"},
