@@ -5,6 +5,7 @@ import (
 	"github.com/carbonblack/binee/util"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -92,6 +93,7 @@ type WinEmulator struct {
 	MemRegions         *MemRegions
 	Handles            map[uint64]*Handle
 	LoadedModules      map[string]uint64
+	LdrIndex           int
 	Heap               *core.HeapManager
 	Registry           *Registry
 	CPU                *core.CpuManager
@@ -419,7 +421,8 @@ func LoadMem(pe *pefile.PeFile, path string, args []string, options *WinEmulator
 	}
 	emu.Binary = path
 	emu.Verbosity = options.VerboseLevel
-	emu.Args = args
+
+	emu.Args = append([]string{filepath.Base(path)}, args...)
 	emu.Argc = uint64(len(args))
 	emu.nameToHook = make(map[string]*Hook)
 	emu.LoadedModules = make(map[string]uint64)
@@ -561,7 +564,7 @@ func LoadMem(pe *pefile.PeFile, path string, args []string, options *WinEmulator
 	if buf, err = ioutil.ReadFile(options.ConfigPath); err == nil {
 		_ = yaml.Unmarshal(buf, &emu.Opts)
 	}
-
+	emu.LdrIndex = 0
 	emu.SearchPath = []string{"temp/", emu.Opts.Root + "windows/system32/", "c:\\Windows\\System32"}
 
 	var mockRegistry *Registry

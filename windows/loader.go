@@ -291,7 +291,8 @@ func (emu *WinEmulator) initializeListHead(address uint64) {
 }
 
 //build an LdrEntry and then write it to the emulator memory
-func (emu *WinEmulator) createLdrEntry(lpe *pefile.PeFile, index uint64) uint64 {
+func (emu *WinEmulator) createLdrEntry(lpe *pefile.PeFile) uint64 {
+	index := uint64(emu.LdrIndex)
 	if emu.PtrSize == 4 {
 		LdrEntry := PebLdrDataTableEntry32{}
 		LdrEntry.BaseDllName = UnicodeString32{}
@@ -325,6 +326,7 @@ func (emu *WinEmulator) createLdrEntry(lpe *pefile.PeFile, index uint64) uint64 
 		LdrBuf := new(bytes.Buffer)
 		binary.Write(LdrBuf, binary.LittleEndian, LdrEntry)
 		ldrEntryAddress := emu.Heap.Malloc(uint64(binary.Size(LdrEntry)))
+		emu.LdrIndex++
 		return ldrEntryAddress
 	}
 	return 0
@@ -732,6 +734,23 @@ func (emu *WinEmulator) initRegisters() error {
 	return nil
 }
 
+func (emu *WinEmulator) loadLibrary(peMap map[string]*pefile.PeFile, apiset *pefile.PeFile, name string, peCheck map[string]bool) error {
+	retrieveDllFromDisk(peMap, apiset, emu.SearchPath, name)
+	for _, pe := range peMap {
+		if peCheck[pe.RealName] {
+			continue
+		}
+		peCheck[pe.RealName] = true
+		emu.updateImageBase(pe)
+		emu.extractExports(pe)
+		ldrEntry := emu.createLdrEntry(pe)
+		emu.writeLdrEntry(ldrEntry, "Load")
+		emu.writeLdrEntry(ldrEntry, "Memory")
+		emu.writeLdrEntry(ldrEntry, "Initialization")
+	}
+	return nil
+}
+
 // setupDllMainCallstack Add dll to ropchain for calling DllMain
 func (emu *WinEmulator) setupDllMainCallstack(dll *pefile.PeFile) {
 	//TODO: make this 64-bit aware, this implementation is only 32 bit currently.
@@ -838,19 +857,17 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 		}
 	}
 
-	ldrEntry := emu.createLdrEntry(pe, 0)
+	ldrEntry := emu.createLdrEntry(pe)
 	emu.writeLdrEntry(ldrEntry, "Memory")
 	emu.writeLdrEntry(ldrEntry, "Initialization")
 	var lpe *pefile.PeFile
-	for i, key := range ldrList {
+	for _, key := range ldrList {
 		lpe = peMap[key]
-		ldrEntry = emu.createLdrEntry(lpe, uint64(i+1))
+		ldrEntry = emu.createLdrEntry(lpe)
 		emu.writeLdrEntry(ldrEntry, "Load")
 		emu.writeLdrEntry(ldrEntry, "Memory")
 		emu.writeLdrEntry(ldrEntry, "Initialization")
 	}
-
-	//TODO: Loading non-loaded libraries if needed for forwarding.
 
 	// update the imports table for the current PE so that imports resolve correctly
 	for _, importInfo := range pe.Imports {
@@ -900,12 +917,20 @@ func (emu *WinEmulator) initPe(pe *pefile.PeFile, path string, arch, mode int, a
 			}
 		}
 		dll = peMap[dllName]
+		if dll == nil {
+			emu.loadLibrary(peMap, apiset, dllName, peCheck)
+		}
+		dll = peMap[dllName]
+		if dll == nil {
+			continue
+		}
 		var realAddr uint64
 		if ordinalNum != 0 {
 			if _, ok := dll.ExportOrdinalMap[int(ordinalNum)]; ok {
 				realAddr = uint64(dll.ExportOrdinalMap[int(ordinalNum)].Rva) + dll.ImageBase()
 			}
 		} else {
+
 			if _, ok := dll.ExportNameMap[funcName]; ok {
 				realAddr = uint64(dll.ExportNameMap[funcName].Rva) + dll.ImageBase()
 			}
