@@ -3,7 +3,6 @@ package windows
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	"io"
 	"path/filepath"
@@ -36,6 +35,64 @@ type StartupInfo struct {
 	StdError    uint32
 }
 
+//DWORD WaitForMultipleObjects(
+//  DWORD        nCount,
+//  const HANDLE *lpHandles,
+//  BOOL         bWaitAll,
+//  DWORD        dwMilliseconds
+//);
+
+func singleWait(threadChan <-chan struct{}, myChan chan int) {
+	<-threadChan
+	myChan <- 1
+}
+func startWaiting(emu *WinEmulator, threads []uint64, curThreadId int) {
+	//Create a channel for every thread
+	recieverChannels := make([]chan struct{}, len(threads))
+	thread := emu.Scheduler.findThreadyByID(curThreadId)
+	thread.Status = 5
+	for i := range recieverChannels {
+		recieverChannels[i] = make(chan struct{})
+	}
+	//Create the big channel waiting for output
+	mainChannel := make(chan int)
+	for i, threadNum := range threads {
+		thread := emu.Scheduler.findThreadyByID(int(threadNum))
+		if thread.WaitingChannels == nil {
+			thread.WaitingChannels = make([]chan struct{}, 0)
+		}
+		thread.WaitingChannels = append(thread.WaitingChannels, recieverChannels[i])
+		go singleWait(recieverChannels[i], mainChannel)
+	}
+
+	for counter := 0; counter < len(threads); {
+		counter += <-mainChannel
+	}
+
+}
+func waitForMultipleObjects(emu *WinEmulator, in *Instruction) bool {
+	n := in.Args[0]
+	var threadNumber uint64
+	var threads []uint64
+	for i := uint64(0); i < n; i++ {
+		offset := in.Args[1] + (i * emu.PtrSize)
+		handleRaw, _ := emu.Uc.MemRead(offset, emu.PtrSize)
+		if emu.PtrSize == 4 {
+			threadNumber = uint64(binary.LittleEndian.Uint32(handleRaw))
+		} else {
+			threadNumber = binary.LittleEndian.Uint64(handleRaw)
+		}
+		if int(threadNumber) > len(emu.Scheduler.threads) {
+			//Thread doesn't exist
+			return SkipFunctionStdCall(true, 0)(emu, in)
+		}
+		threads = append(threads, threadNumber)
+	}
+	go startWaiting(emu, threads, emu.Scheduler.CurThreadId())
+	//Since we did everything, we now should change our state to waiting
+	return SkipFunctionStdCall(true, 1)(emu, in)
+}
+
 func commandLineToArgv(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	numOfArgs := len(emu.Args)
 	var buff []byte
@@ -59,7 +116,6 @@ func commandLineToArgv(emu *WinEmulator, in *Instruction, wide bool) func(emu *W
 			buff = append([]byte(emu.Args[i]), 0, 0)
 		}
 		emu.Uc.MemWrite(addr, buff)
-		fmt.Println(util.ReadWideChar(emu.Uc, addr, 0))
 		addresses = append(addresses, addr)
 	}
 	var addressesRaw []byte
@@ -217,7 +273,13 @@ func getDeviceDriverBaseName(emu *WinEmulator, in *Instruction, wide bool) func(
 	}
 	return SkipFunctionStdCall(true, uint64(ret))
 }
+func wcsicmp(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
+	string1 := util.ReadWideChar(emu.Uc, in.Args[0], 0)
+	string2 := util.ReadWideChar(emu.Uc, in.Args[1], 0)
+	retVal := strings.Compare(strings.ToLower(string1), strings.ToLower(string2))
 
+	return SkipFunctionStdCall(true, uint64(retVal))
+}
 func lstrcmpi(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	var retVal int
 	if wide {
@@ -816,6 +878,12 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(true, in.Args[0])(emu, in)
 		},
 	})
+	emu.AddHook("", "DecodePointer", &Hook{
+		Parameters: []string{"Ptr"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, in.Args[0])(emu, in)
+		},
+	})
 	emu.AddHook("", "EnterCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
 		Fn:         SkipFunctionStdCall(false, 0),
@@ -893,6 +961,12 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{"w:lpCmdLine", "pNumArgs"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			return commandLineToArgv(emu, in, true)(emu, in)
+		},
+	})
+	emu.AddHook("", "GetConsoleWindow", &Hook{
+		Parameters: []string{},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0x1383)(emu, in)
 		},
 	})
 	emu.AddHook("", "GetConsoleMode", &Hook{
@@ -998,6 +1072,10 @@ func KernelbaseHooks(emu *WinEmulator) {
 		},
 	})
 
+	emu.AddHook("", "RtlGetNtProductType", &Hook{
+		Parameters: []string{"ProductType"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
 	emu.AddHook("", "GetProcessHeap", &Hook{
 		Parameters: []string{},
 		Fn:         SkipFunctionStdCall(true, 0x123456),
@@ -1486,6 +1564,12 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return lstrcmpi(emu, in, true)(emu, in)
 		},
 	})
+	emu.AddHook("", "_wcsicmp", &Hook{
+		Parameters: []string{"w:string1", "w:string2", "locale"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return wcsicmp(emu, in)(emu, in)
+		},
+	})
 	emu.AddHook("", "MapViewOfFile", &Hook{
 		Parameters: []string{"hFileMappingObject", "dwDesiredAccess", "dwFileOffsetHigh", "dwFileOffsetLow", "dwNumberOfBytesToMap"},
 	})
@@ -1524,6 +1608,21 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Fn: func(emulator *WinEmulator, in *Instruction) bool {
 			return expandEnvironmentStrings(emu, in, true)(emu, in)
 		},
+	})
+
+	emu.AddHook("", "RaiseException", &Hook{
+		Parameters: []string{"dwExceptionCode", "dwExceptionFlags", "nNumberOfArguments", "lpArguments"},
+		Fn:         SkipFunctionStdCall(false, 0),
+	})
+	//DWORD WaitForMultipleObjects(
+	//	DWORD        nCount,
+	//const HANDLE *lpHandles,
+	//BOOL         bWaitAll,
+	//	DWORD        dwMilliseconds
+	//);
+	emu.AddHook("", "WaitForMultipleObjects", &Hook{
+		Parameters: []string{"nCount", "lpHandles", "b:bWaitAll", "dwMilliseconds"},
+		Fn:         waitForMultipleObjects,
 	})
 
 }

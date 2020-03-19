@@ -140,7 +140,6 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 				if emu.Verbosity == 2 {
 					fmt.Println("---")
 					fmt.Println(emu.CPU.ReadRegisters())
-
 					if emu.UcMode == uc.MODE_32 {
 						emu.CPU.PrintStack(10)
 					} else {
@@ -168,7 +167,7 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 		}
 		//}
 
-		if emu.Ticks%10 == 0 {
+		if emu.Ticks%10 == 0 || emu.Scheduler.curThread.Status != 0 {
 			emu.Scheduler.DoSchedule()
 		}
 
@@ -191,7 +190,6 @@ func HookInvalid(emu *WinEmulator) func(mu uc.Unicorn, access int, addr uint64, 
 		default:
 			fmt.Fprintf(os.Stderr, "unknown memory error: address = 0x%x, size = 0x%x, value = 0x%x\n", addr, size, value)
 		}
-
 		return true
 	}
 }

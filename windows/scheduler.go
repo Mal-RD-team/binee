@@ -8,10 +8,49 @@ import (
 	"github.com/carbonblack/binee/core"
 )
 
+//Initialized (0)
+//
+//Initialized — It is recognized by the microkernel.
+//
+//
+//Ready (1)
+//
+//Ready — It is prepared to run on the next available processor.
+//
+//
+//Running (2)
+//
+//Running — It is executing.
+//
+//
+//Standby (3)
+//
+//Standby — It is about to run, only one thread may be in this state at a time.
+//
+//
+//Terminated (4)
+//
+//Terminated — It is finished executing.
+//
+//
+//Waiting (5)
+//
+//Waiting — It is not ready for the processor, when ready, it will be rescheduled.
+//
+//
+//Transition (6)
+//
+//Transition — The thread is waiting for resources other than the processor,
+//
+//
+//Unknown (7)
+//
+//Unknown — The thread state is unknown.
 type Thread struct {
-	ThreadId  int
-	registers interface{}
-	Status    int
+	ThreadId        int
+	registers       interface{}
+	Status          int
+	WaitingChannels []chan struct{} //Might change in the future to detect how was the thread closed.
 }
 
 type ScheduleManager struct {
@@ -24,7 +63,7 @@ type ScheduleManager struct {
 
 func NewScheduleManager(emu *WinEmulator) *ScheduleManager {
 	threads := make([]*Thread, 0, 1)
-	firstThread := &Thread{1, emu.CPU.PopContext(), 0}
+	firstThread := &Thread{1, emu.CPU.PopContext(), 0, nil}
 
 	//Building stack with ROP to exit thread after it ends.
 	if emu.PtrSize == 4 {
@@ -60,6 +99,14 @@ func (self *ScheduleManager) CurThreadId() int {
 	return self.curThread.ThreadId
 }
 
+func (self *ScheduleManager) findThreadyByID(threadId int) *Thread {
+	for _, t := range self.threads {
+		if t.ThreadId == threadId {
+			return t
+		}
+	}
+	return nil
+}
 func (self *ScheduleManager) DoSchedule() {
 	// if there is only one thread, nothing to do
 	if len(self.threads) == 1 {
@@ -92,6 +139,12 @@ func (self *ScheduleManager) DoSchedule() {
 }
 
 func (self *ScheduleManager) ThreadEnded(threadId int) uint64 {
+	//Tell channels waiting that I am closed.
+	t := self.findThreadyByID(threadId)
+	for _, c := range t.WaitingChannels {
+		c <- struct{}{}
+	}
+
 	self.DelThread(threadId)
 	nextThread := self.threads[0]
 	self.curThread = nextThread
@@ -112,7 +165,7 @@ func (self *ScheduleManager) NewThread(eip uint64, stack uint64, parameter uint6
 
 	// init new thread
 	self.threadsAtomic += 1
-	newThread := Thread{self.threadsAtomic, self.emu.CPU.PopContext(), int(status)}
+	newThread := Thread{self.threadsAtomic, self.emu.CPU.PopContext(), int(status), nil}
 
 	if self.emu.PtrSize == 4 {
 		// offset by one due to parameter to thread
