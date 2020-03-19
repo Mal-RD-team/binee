@@ -80,10 +80,11 @@ func (emu *WinEmulator) Start() error {
 	emu.SetupHooks()
 
 	emu.Uc.Start(emu.EntryPoint, 0x0)
-	if len(emu.Scheduler.threads) > 1 {
-		ip := emu.Scheduler.ThreadEnded(emu.Scheduler.CurThreadId())
-		emu.Uc.Start(ip, 0x0)
-	}
+	//
+	//if len(emu.Scheduler.threads) > 1 {
+	//	ip := emu.Scheduler.ThreadEnded(emu.Scheduler.CurThreadId())
+	//	emu.Uc.Start(ip, 0x0)
+	//}
 
 	return nil
 }
@@ -161,11 +162,11 @@ func HookCode(emu *WinEmulator) func(mu uc.Unicorn, addr uint64, size uint32) {
 			}
 		}
 
-		if emu.Scheduler.CurThreadId() == 1 {
-			if doContinue == false {
-				mu.Stop()
-			}
+		//if emu.Scheduler.CurThreadId() == 1 {
+		if doContinue == false {
+			mu.Stop()
 		}
+		//}
 
 		if emu.Ticks%10 == 0 {
 			emu.Scheduler.DoSchedule()
