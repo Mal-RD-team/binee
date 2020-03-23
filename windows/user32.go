@@ -5,6 +5,7 @@ import (
 	"github.com/carbonblack/binee/util"
 	"github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	"math"
+	"strings"
 )
 
 func wsprintf(emu *WinEmulator, in *Instruction, wide bool) bool {
@@ -14,6 +15,7 @@ func wsprintf(emu *WinEmulator, in *Instruction, wide bool) bool {
 	} else {
 		format = util.ReadASCII(emu.Uc, in.Args[1], 0)
 	}
+	format = strings.ReplaceAll(format, "%ws", "%S")
 	parameters := util.ParseFormatter(format)
 	var startAddr uint64
 	//Get stack address
@@ -36,6 +38,7 @@ func wsprintf(emu *WinEmulator, in *Instruction, wide bool) bool {
 			values = append(values, in.Hook.Values[index+2].(uint64))
 		}
 	}
+	format = strings.ReplaceAll(format, "%S", "%s")
 	formattedString := fmt.Sprintf(format, values...)
 	var raw []byte
 	if wide {
@@ -78,7 +81,12 @@ func User32Hooks(emu *WinEmulator) {
 			return wsprintf(emu, in, true)
 		},
 	})
-
+	emu.AddHook("", "EnableMenuItem", &Hook{
+		Parameters: []string{"hMenu", "uIDEnableItem", "uEnable"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0)(emu, in)
+		},
+	})
 	emu.AddHook("", "LoadBitmapA", &Hook{
 		Parameters: []string{"hInstance", "a:lpBitmapName"},
 		Fn:         SkipFunctionStdCall(true, 1),
@@ -92,11 +100,6 @@ func User32Hooks(emu *WinEmulator) {
 		Parameters: []string{"lpstr", "a:lpcstr", "arglist"},
 	})
 
-	//int wvsprintfW(
-	//  LPWSTR  ,
-	//  LPCWSTR ,
-	//  va_list arglist
-	//);
 	emu.AddHook("", "wvsprintfW", &Hook{
 		Parameters: []string{"lpwstr", "w:lpcwstr", "arglist"},
 	})
