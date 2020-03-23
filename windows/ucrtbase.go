@@ -187,6 +187,9 @@ func UcrtBase32Hooks(emu *WinEmulator) {
 	emu.AddHook("", "wcslen", &Hook{
 		Parameters: []string{"str"},
 	})
+	emu.AddHook("", "wcsstr", &Hook{
+		Parameters: []string{"w:string", "w:find"},
+	})
 	emu.AddHook("", "wcsncpy", &Hook{
 		Parameters: []string{"strDest", "strSource", "count"},
 	})

@@ -3,10 +3,50 @@ package windows
 import (
 	"bytes"
 	"encoding/binary"
+	"time"
 
 	"github.com/carbonblack/binee/util"
 )
 
+func getLocalTime(emu *WinEmulator, in *Instruction) bool {
+	//void GetLocalTime(
+	//  LPSYSTEMTIME lpSystemTime
+	//);
+	//typedef struct _SYSTEMTIME {
+	//  WORD wYear;
+	//  WORD wMonth;
+	//  WORD wDayOfWeek;
+	//  WORD wDay;
+	//  WORD wHour;
+	//  WORD wMinute;
+	//  WORD wSecond;
+	//  WORD wMilliseconds;
+	//} SYSTEMTIME, *PSYSTEMTIME, *LPSYSTEMTIME;
+	t := time.Now()
+	systemTime := struct {
+		Year         uint16
+		Month        uint16
+		DayOfWeek    uint16
+		Day          uint16
+		Hour         uint16
+		Minute       uint16
+		Second       uint16
+		Milliseconds uint16
+	}{
+		uint16(t.Year()),
+		uint16(t.Month()),
+		uint16(t.Weekday()),
+		uint16(t.Day()),
+		uint16(t.Hour()),
+		uint16(t.Minute()),
+		uint16(t.Second()),
+		0,
+	}
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, &systemTime)
+	emu.Uc.MemWrite(in.Args[0], buf.Bytes())
+	return SkipFunctionStdCall(false, 0)(emu, in)
+}
 func getSystemInfo(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
 	info := struct {
 		Dummy          uint64
@@ -104,11 +144,15 @@ func Sysinfoapi(emu *WinEmulator) {
 			return getSystemInfo(emu, in)(emu, in)
 		},
 	})
-
 	emu.AddHook("", "GetSystemInfo", &Hook{
 		Parameters: []string{"lpSystemInfo"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
 			return getSystemInfo(emu, in)(emu, in)
 		},
+	})
+
+	emu.AddHook("", "GetLocalTime", &Hook{
+		Parameters: []string{"lpSystemTime"},
+		Fn:         getLocalTime,
 	})
 }

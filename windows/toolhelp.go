@@ -163,10 +163,6 @@ func ToolHelpHooks(emu *WinEmulator) {
 			return process32First(emu, in, true)(emu, in)
 		},
 	})
-	//BOOL Process32Next(
-	//  HANDLE           hSnapshot,
-	//  LPPROCESSENTRY32 lppe
-	//);
 	emu.AddHook("", "Process32Next", &Hook{
 		Parameters: []string{"hSnapshot", "lppe"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
@@ -180,4 +176,8 @@ func ToolHelpHooks(emu *WinEmulator) {
 		},
 	})
 
+	emu.AddHook("", "GetTokenInformation", &Hook{
+		Parameters: []string{"TokenHandle", "TokenInformationClass", "TokenInformation", "TokenInformationLength", "ReturnLength"},
+		Fn:         SkipFunctionStdCall(true, 0),
+	})
 }

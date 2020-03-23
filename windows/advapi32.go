@@ -105,6 +105,11 @@ func AdvApi32Hooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(true, 0x1)(emu, in)
 		},
 	})
+
+	emu.AddHook("", "GetSecurityInfo", &Hook{
+		Parameters: []string{"handle", "ObjectType", "SecurityInfo", "ppsidOwnerr", "ppsideGroup", "ppDacl", "ppSacl", "ppSecurityDescriptor"},
+		Fn:         SkipFunctionStdCall(true, ERROR_SUCCESS),
+	})
 	emu.AddHook("", "GetUserNameA", &Hook{
 		Parameters: []string{"lpBuffer", "pcbBuffer"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {

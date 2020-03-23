@@ -103,6 +103,19 @@ var EN_LOCALE = map[int]string{
 	0xf:    ",",
 }
 
+func GetSystemInformationClass(val int) string {
+	constantsToString := make(map[int]string)
+	constantsToString[0x0] = "SystemBasicInformation"
+	constantsToString[0x2] = "SystemPerformanceInformation"
+	constantsToString[0x3] = "SystemTimeOfDayInformation"
+	constantsToString[0x05] = "SystemProcessInformation"
+	constantsToString[0x08] = "SystemProcessorPerformanceInformation"
+	constantsToString[0x17] = "SystemInterruptInformation"
+	constantsToString[0x21] = "SystemExceptionInformation"
+	constantsToString[0x25] = "SystemRegistryQuotaInformation"
+	constantsToString[0x2D] = "SystemLookasideInformation"
+	return constantsToString[val]
+}
 func GetLocale(id int) map[int]string {
 	if id == 0x409 {
 		return EN_LOCALE

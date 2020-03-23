@@ -88,18 +88,38 @@ func imageNtHeaderEX(emu *WinEmulator, in *Instruction) bool {
 	return SkipFunctionStdCall(true, 0)(emu, in)
 }
 
-//NTSYSAPI NTSTATUS ZwMapViewOfSection(
-//  HANDLE          SectionHandle,
-//  HANDLE          ProcessHandle,
-//  PVOID           *BaseAddress,
-//  ULONG_PTR       ZeroBits,
-//  SIZE_T          CommitSize,
-//  PLARGE_INTEGER  SectionOffset,
-//  PSIZE_T         ViewSize,
-//  SECTION_INHERIT InheritDisposition,
-//  ULONG           AllocationType,
-//  ULONG           Win32Protect
-//);
+func zwQueryInformationProcess(emu *WinEmulator, in *Instruction) bool {
+
+	return SkipFunctionStdCall(true, 1)(emu, in)
+}
+func zwQuerySystemInformation(emu *WinEmulator, in *Instruction) bool {
+	class := in.Args[0]
+	actualClass := GetSystemInformationClass(int(class))
+	in.Hook.Parameters[0] = "s:" + in.Hook.Parameters[0]
+	in.Hook.Values[0] = actualClass
+	//typedef struct _SYSTEM_BASIC_INFORMATION {
+	//    BYTE Reserved1[24];
+	//    PVOID Reserved2[4];
+	//    CCHAR NumberOfProcessors;
+	//} SYSTEM_BASIC_INFORMATION;
+
+	if actualClass == "SystemBasicInformation" {
+		var reserved [24]byte
+		var reserved2 [4]uint32
+		val := struct {
+			Reserved1          [24]byte
+			Reserved2          [4]uint32
+			NumberOfProcessors byte
+		}{reserved,
+			reserved2,
+			1,
+		}
+		buff := new(bytes.Buffer)
+		binary.Write(buff, binary.LittleEndian, &val)
+		emu.Uc.MemWrite(in.Args[2], buff.Bytes())
+	}
+	return SkipFunctionStdCall(true, 1)(emu, in)
+}
 func zwMapViewOfSection(emu *WinEmulator, in *Instruction) func(emu *WinEmulator, in *Instruction) bool {
 	//Doesnt support  other process yet.
 	//if in.Args[1]!=0xFFFFFFFF {
@@ -128,11 +148,6 @@ func NtdllHooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(true, in.Args[0]>>in.Args[1])(emu, in)
 		},
 	})
-	//BOOL SetProtectedPolicy(
-	//	LPCGUID    PolicyGuid,
-	//	ULONG_PTR  PolicyValue,
-	//	PULONG_PTR OldPolicyValue
-	//);
 	emu.AddHook("", "RtlSetProtectedPolicy", &Hook{
 		Parameters: []string{"PolicyGuid", "PolicyValue", "OldPolicyValue"},
 		Fn:         SkipFunctionStdCall(true, 1),
@@ -240,6 +255,23 @@ func NtdllHooks(emu *WinEmulator) {
 		},
 		NoLog: true,
 	})
+	//SIZE_T RtlSizeHeap
+	//(
+	//	HANDLE      heap,
+	//	ULONG       flags,
+	//const void* ptr
+	//)
+	emu.AddHook("", "RtlSizeHeap", &Hook{
+		Parameters: []string{"heap", "flags", "ptr"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			size := emu.Heap.Size(in.Args[2])
+			if size != 0 {
+				return SkipFunctionStdCall(true, size)(emu, in)
+
+			}
+			return SkipFunctionStdCall(true, 0xFFFFFFFF)(emu, in)
+		},
+	})
 	emu.AddHook("", "RtlAcquirePebLock", &Hook{Parameters: []string{}})
 	emu.AddHook("", "RtlAcquireSRWLockExclusive", &Hook{
 		Parameters: []string{"SRWLock"},
@@ -253,7 +285,6 @@ func NtdllHooks(emu *WinEmulator) {
 			emu.Scheduler.ThreadEnded(emu.Scheduler.CurThreadId())
 			return true
 		},
-		//Fn:SkipFunctionStdCall(true,1),
 	})
 	emu.AddHook("", "RtlCreateHeap", &Hook{
 		Parameters: []string{"Flags", "HeapBase", "ReserveSize", "CommitSize", "Lock", "Parameters"},
@@ -287,9 +318,11 @@ func NtdllHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "RtlInitializeCriticalSection", &Hook{
 		Parameters: []string{"lpCriticalSection"},
+		NoLog:      true,
 	})
 	emu.AddHook("", "RtlInitializeCriticalSectionEx", &Hook{
 		Parameters: []string{"lpCriticalSection", "dwSpinCount", "flags"},
+		NoLog:      true,
 	})
 	emu.AddHook("", "RtlInitAnsiStringEx", &Hook{
 		Parameters: []string{"unknown1", "unknown2"},
@@ -315,6 +348,15 @@ func NtdllHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "RtlEncodePointer", &Hook{
 		Parameters: []string{"ptr"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, in.Args[0])(emu, in)
+		},
+	})
+	emu.AddHook("", "RtlDecodePointer", &Hook{
+		Parameters: []string{"ptr"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, in.Args[0])(emu, in)
+		},
 	})
 	emu.AddHook("", "RtlNtStatusToDosErrorNoTeb", &Hook{
 		Parameters: []string{"Status"},
@@ -370,9 +412,11 @@ func NtdllHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "ZwQueryInformationProcess", &Hook{
 		Parameters: []string{"ProcessHandle", "ProcessInformationClass", "ProcessInformation", "ProcessInformationLength", "ReturnLength"},
+		Fn:         zwQueryInformationProcess,
 	})
 	emu.AddHook("", "ZwQuerySystemInformation", &Hook{
 		Parameters: []string{"SystemInformationClass", "SystemInformation", "SystemInformationLength", "ReturnLength"},
+		Fn:         zwQuerySystemInformation,
 	})
 	emu.AddHook("", "ZwQueryValueKey", &Hook{
 		Parameters: []string{"KeyHandle", "ValueName", "KeyValueInformationClass", "KeyValueInformation", "Length", "ResultLength"},
