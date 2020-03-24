@@ -3,6 +3,7 @@ package windows
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/carbonblack/binee/core"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	"io"
 	"path/filepath"
@@ -42,38 +43,117 @@ type StartupInfo struct {
 //  DWORD        dwMilliseconds
 //);
 
-func singleWait(threadChan <-chan struct{}, myChan chan int) {
-	<-threadChan
-	myChan <- 1
+func singleWait(threadChan <-chan int, myChan chan int) {
+	val := <-threadChan
+	myChan <- val
 }
-func startWaiting(emu *WinEmulator, threads []uint64, curThreadId int) {
+func startWaiting(emu *WinEmulator, threads []uint64, curThreadId int, duration int, waitAll bool) {
 	//Create a channel for every thread
-	recieverChannels := make([]chan struct{}, len(threads))
+	receiverChannels := make([]chan int, len(threads))
+	returnVal := WAIT_OBJECT_0
 	thread := emu.Scheduler.findThreadyByID(curThreadId)
 	thread.Status = 5
-	for i := range recieverChannels {
-		recieverChannels[i] = make(chan struct{})
+	for i := range receiverChannels {
+		receiverChannels[i] = make(chan int)
 	}
 	//Create the big channel waiting for output
 	mainChannel := make(chan int)
 	for i, threadNum := range threads {
 		thread := emu.Scheduler.findThreadyByID(int(threadNum))
 		if thread.WaitingChannels == nil {
-			thread.WaitingChannels = make([]chan struct{}, 0)
+			thread.WaitingChannels = make([]chan int, 0)
 		}
-		thread.WaitingChannels = append(thread.WaitingChannels, recieverChannels[i])
-		go singleWait(recieverChannels[i], mainChannel)
+		thread.WaitingChannels = append(thread.WaitingChannels, receiverChannels[i])
+		go singleWait(receiverChannels[i], mainChannel)
+	}
+	timeout := false
+	timeChannel := make(<-chan time.Time)
+	n := 1
+	if waitAll {
+		n = len(threads)
+	}
+	if duration != -1 {
+		timeChannel = time.After(time.Duration(duration) + 1) //this +1 here is because we created the channel before the actual waiting starts.
 	}
 
-	for counter := 0; counter < len(threads); {
-		counter += <-mainChannel
+	for counter := 0; counter < n; {
+		if timeout {
+			break
+		}
+		select {
+		case val := <-mainChannel:
+			threadIndex := 0
+			for i, tid := range threads {
+				if tid == uint64(val) {
+					threadIndex = i
+				}
+			}
+			returnVal = WAIT_OBJECT_0 + threadIndex
+			counter += 1
+		case <-timeChannel:
+			timeout = true
+			returnVal = WAIT_TIMEOUT
+			break
+		}
 	}
+
+	thread.Status = 0
+	if emu.PtrSize == 4 {
+		thread.registers.(*core.Registers32).Eax = uint32(returnVal)
+
+	} else {
+		thread.registers.(*core.Registers64).Rax = uint64(returnVal)
+	}
+
+	//In case of WaitAll ==false or timeout, the function will exit and other threads will signal
+	//this will cause panic, so we have to remove the channels waiting there
+	for i := range threads {
+		rc := receiverChannels[i]
+		t := emu.Scheduler.findThreadyByID(int(threads[i]))
+		//in case this was the thread that exited.
+		if t == nil {
+			continue
+		}
+		t.RemoveReceiverChannel(rc)
+	}
+	close(mainChannel)
 
 }
+
+func waitForSingleObject(emu *WinEmulator, in *Instruction) bool {
+	if emu.Scheduler.findThreadyByID(int(in.Args[0])) == nil {
+		//Thread doesn't exist
+		return SkipFunctionStdCall(true, WAIT_FAILED)(emu, in)
+	}
+	threads := []uint64{in.Args[0]}
+	duration := int(in.Args[1])
+	go startWaiting(emu, threads, emu.Scheduler.CurThreadId(), duration, true)
+	return SkipFunctionStdCall(true, 1)(emu, in)
+}
+
+//The WaitForMultipleObjects function can specify handles of any of the following object types in the lpHandles array:
+//Change notification
+//Console input
+//Event
+//Memory resource notification
+//Mutex
+//Process
+//Semaphore
+//Thread
+//Waitable timer
+//Everyone of this can be easily handled, but I won't do it now.
 func waitForMultipleObjects(emu *WinEmulator, in *Instruction) bool {
 	n := in.Args[0]
+	duration := 0
+	waitAll := in.Args[2] == 1
 	var threadNumber uint64
 	var threads []uint64
+	if emu.PtrSize == 4 {
+		duration = int(int32(in.Args[3])) //in case it was -1.
+	} else {
+		duration = int(int64(in.Args[3]))
+	}
+
 	for i := uint64(0); i < n; i++ {
 		offset := in.Args[1] + (i * emu.PtrSize)
 		handleRaw, _ := emu.Uc.MemRead(offset, emu.PtrSize)
@@ -82,15 +162,15 @@ func waitForMultipleObjects(emu *WinEmulator, in *Instruction) bool {
 		} else {
 			threadNumber = binary.LittleEndian.Uint64(handleRaw)
 		}
-		if int(threadNumber) > len(emu.Scheduler.threads) {
+		if emu.Scheduler.findThreadyByID(int(threadNumber)) == nil {
 			//Thread doesn't exist
-			return SkipFunctionStdCall(true, 0)(emu, in)
+			return SkipFunctionStdCall(true, WAIT_FAILED)(emu, in)
 		}
 		threads = append(threads, threadNumber)
 	}
-	go startWaiting(emu, threads, emu.Scheduler.CurThreadId())
-	//Since we did everything, we now should change our state to waiting
-	return SkipFunctionStdCall(true, 1)(emu, in)
+	go startWaiting(emu, threads, emu.Scheduler.CurThreadId(), int(duration), waitAll)
+
+	return SkipFunctionStdCall(true, 1)(emu, in) //We don't really care about the return here, we change it anyway.
 }
 
 func commandLineToArgv(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
@@ -1462,10 +1542,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{},
 		Fn:         SkipFunctionStdCall(false, 0x1),
 	})
-	emu.AddHook("", "WaitForSingleObject", &Hook{
-		Parameters: []string{"hHandle", "dwMilliseconds"},
-		Fn:         SkipFunctionStdCall(true, 0x1),
-	})
+
 	emu.AddHook("", "Wow64DisableWow64FsRedirection", &Hook{
 		Parameters: []string{"OldValue"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
@@ -1614,12 +1691,11 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Parameters: []string{"dwExceptionCode", "dwExceptionFlags", "nNumberOfArguments", "lpArguments"},
 		Fn:         SkipFunctionStdCall(false, 0),
 	})
-	//DWORD WaitForMultipleObjects(
-	//	DWORD        nCount,
-	//const HANDLE *lpHandles,
-	//BOOL         bWaitAll,
-	//	DWORD        dwMilliseconds
-	//);
+
+	emu.AddHook("", "WaitForSingleObject", &Hook{
+		Parameters: []string{"hHandle", "dwMilliseconds"},
+		Fn:         waitForSingleObject,
+	})
 	emu.AddHook("", "WaitForMultipleObjects", &Hook{
 		Parameters: []string{"nCount", "lpHandles", "b:bWaitAll", "dwMilliseconds"},
 		Fn:         waitForMultipleObjects,

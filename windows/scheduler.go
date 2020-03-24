@@ -50,7 +50,7 @@ type Thread struct {
 	ThreadId        int
 	registers       interface{}
 	Status          int
-	WaitingChannels []chan struct{} //Might change in the future to detect how was the thread closed.
+	WaitingChannels []chan int
 }
 
 type ScheduleManager struct {
@@ -138,11 +138,22 @@ func (self *ScheduleManager) DoSchedule() {
 	self.emu.CPU.PushContext(nextThread.registers)
 }
 
+func (self *Thread) RemoveReceiverChannel(rc chan int) {
+	var waitingChanels []chan int
+	for _, wc := range self.WaitingChannels {
+		if wc != rc {
+			waitingChanels = append(waitingChanels, wc)
+		} else {
+			close(wc)
+		}
+	}
+}
+
 func (self *ScheduleManager) ThreadEnded(threadId int) uint64 {
 	//Tell channels waiting that I am closed.
 	t := self.findThreadyByID(threadId)
 	for _, c := range t.WaitingChannels {
-		c <- struct{}{}
+		c <- threadId
 	}
 
 	self.DelThread(threadId)
