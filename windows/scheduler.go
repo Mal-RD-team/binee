@@ -147,6 +147,7 @@ func (self *Thread) RemoveReceiverChannel(rc chan int) {
 			close(wc)
 		}
 	}
+	self.WaitingChannels = waitingChanels
 }
 
 func (self *ScheduleManager) ThreadEnded(threadId int) uint64 {

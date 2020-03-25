@@ -378,7 +378,7 @@ func NtdllHooks(emu *WinEmulator) {
 	emu.AddHook("", "RtlQueryHeapInformation", &Hook{
 		Parameters: []string{"HeapHandle", "HeapInformationClass", "HeapInformation", "HeapInformationLength", "ReturnLength"},
 	})
-	emu.AddHook("", "RtlSetLastWin32Error", &Hook{Parameters: []string{"err"}})
+	emu.AddHook("", "RtlSetLastWin32Error", &Hook{Parameters: []string{"err"}, NoLog: true})
 	emu.AddHook("", "RtlSetUnhandledExceptionFilter", &Hook{
 		Parameters: []string{"lpTopLevelExceptionFilter"},
 	})

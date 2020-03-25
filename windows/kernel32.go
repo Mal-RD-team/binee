@@ -43,18 +43,26 @@ type StartupInfo struct {
 //  DWORD        dwMilliseconds
 //);
 
-func singleWait(threadChan <-chan int, myChan chan int) {
-	val := <-threadChan
-	myChan <- val
+func singleWait(threadChan <-chan int, myChan chan int, closeChannel <-chan struct{}) {
+	select {
+	case val := <-threadChan:
+		myChan <- val
+		break
+	case <-closeChannel:
+		break
+	}
+
 }
 func startWaiting(emu *WinEmulator, threads []uint64, curThreadId int, duration int, waitAll bool) {
 	//Create a channel for every thread
 	receiverChannels := make([]chan int, len(threads))
+	closeChannels := make([]chan struct{}, len(threads))
 	returnVal := WAIT_OBJECT_0
 	thread := emu.Scheduler.findThreadyByID(curThreadId)
 	thread.Status = 5
 	for i := range receiverChannels {
 		receiverChannels[i] = make(chan int)
+		closeChannels[i] = make(chan struct{})
 	}
 	//Create the big channel waiting for output
 	mainChannel := make(chan int)
@@ -64,18 +72,19 @@ func startWaiting(emu *WinEmulator, threads []uint64, curThreadId int, duration 
 			thread.WaitingChannels = make([]chan int, 0)
 		}
 		thread.WaitingChannels = append(thread.WaitingChannels, receiverChannels[i])
-		go singleWait(receiverChannels[i], mainChannel)
+		go singleWait(receiverChannels[i], mainChannel, closeChannels[i])
 	}
 	timeout := false
-	timeChannel := make(<-chan time.Time)
+
 	n := 1
+	timeChannel := make(<-chan time.Time)
 	if waitAll {
 		n = len(threads)
 	}
-	if duration != -1 {
-		timeChannel = time.After(time.Duration(duration) + 1) //this +1 here is because we created the channel before the actual waiting starts.
-	}
 
+	if duration != -1 {
+		timeChannel = time.After(time.Duration(duration+1000) * time.Millisecond) //this +1000 here is because we created the channel before the actual waiting starts.
+	}
 	for counter := 0; counter < n; {
 		if timeout {
 			break
@@ -107,6 +116,7 @@ func startWaiting(emu *WinEmulator, threads []uint64, curThreadId int, duration 
 
 	//In case of WaitAll ==false or timeout, the function will exit and other threads will signal
 	//this will cause panic, so we have to remove the channels waiting there
+
 	for i := range threads {
 		rc := receiverChannels[i]
 		t := emu.Scheduler.findThreadyByID(int(threads[i]))
@@ -115,6 +125,7 @@ func startWaiting(emu *WinEmulator, threads []uint64, curThreadId int, duration 
 			continue
 		}
 		t.RemoveReceiverChannel(rc)
+		closeChannels[i] <- struct{}{}
 	}
 	close(mainChannel)
 
@@ -1095,7 +1106,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(true, 0x2)(emu, in)
 		},
 	})
-	emu.AddHook("", "GetLastError", &Hook{Parameters: []string{}})
+	emu.AddHook("", "GetLastError", &Hook{Parameters: []string{}, NoLog: true})
 	emu.AddHook("", "GetLastActivePopup", &Hook{
 		Parameters: []string{"hWnd"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
@@ -1701,4 +1712,12 @@ func KernelbaseHooks(emu *WinEmulator) {
 		Fn:         waitForMultipleObjects,
 	})
 
+	emu.AddHook("", "WriteConsoleA", &Hook{
+		Parameters: []string{"hConsoleOutput", "a:lpBuffer", "nNumberOfCharsToWrite", "lpNumberOfCharsWritten", "lpReserved"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
+	emu.AddHook("", "WriteConsoleW", &Hook{
+		Parameters: []string{"hConsoleOutput", "w:lpBuffer", "nNumberOfCharsToWrite", "lpNumberOfCharsWritten", "lpReserved"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
 }

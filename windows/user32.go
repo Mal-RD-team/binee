@@ -58,6 +58,25 @@ func wsprintf(emu *WinEmulator, in *Instruction, wide bool) bool {
 	return SkipFunctionCdecl(true, 0)(emu, in)
 
 }
+
+func getClassName(emu *WinEmulator, in *Instruction, wide bool) bool {
+	classname := "Progman"
+	length := uint64(len(classname))
+	destination := in.Args[1]
+	maxCount := in.Args[2]
+	if length >= maxCount {
+		length = maxCount - 1
+	}
+	classname = classname[0:length]
+	if wide {
+		raw := util.ASCIIToWinWChar(classname)
+		emu.Uc.MemWrite(destination, raw)
+	} else {
+		raw := []byte(classname)
+		emu.Uc.MemWrite(destination, raw)
+	}
+	return SkipFunctionStdCall(true, length)(emu, in)
+}
 func User32Hooks(emu *WinEmulator) {
 	emu.AddHook("", "GetWindowRect", &Hook{Parameters: []string{"hWnd", "lpRect"}, Fn: SkipFunctionStdCall(true, 0x1)})
 	emu.AddHook("", "CreateDialogParamA", &Hook{Parameters: []string{"hInstance", "a:lpTemplateName", "hWndParent", "lpDialogFunc", "dwInitParam"}, Fn: SkipFunctionStdCall(true, 0x1)})
@@ -103,5 +122,21 @@ func User32Hooks(emu *WinEmulator) {
 	emu.AddHook("", "wvsprintfW", &Hook{
 		Parameters: []string{"lpwstr", "w:lpcwstr", "arglist"},
 	})
+	emu.AddHook("", "GetShellWindow", &Hook{
+		Parameters: []string{},
+		Fn:         SkipFunctionStdCall(true, 0x1337),
+	})
 
+	emu.AddHook("", "GetClassNameA", &Hook{
+		Parameters: []string{"hWnd", "lpClassName", "nMaxCount"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return getClassName(emu, in, false)
+		},
+	})
+	emu.AddHook("", "GetClassNameW", &Hook{
+		Parameters: []string{"hWnd", "lpClassName", "nMaxCount"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return getClassName(emu, in, true)
+		},
+	})
 }

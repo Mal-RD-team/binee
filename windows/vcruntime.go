@@ -24,4 +24,7 @@ func VcRuntimeHooks(emu *WinEmulator) {
 		Parameters: []string{"locknum"},
 		Fn:         SkipFunctionCdecl(false, 0x0),
 	})
+	emu.AddHook("", "_isleadbyte_l", &Hook{NoLog: true})
+	emu.AddHook("", "isleadbyte", &Hook{NoLog: true})
+
 }
