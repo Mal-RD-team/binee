@@ -2,11 +2,33 @@ package windows
 
 import (
 	"encoding/binary"
+	"strings"
 
 	"github.com/carbonblack/binee/util"
 )
 
 //import "fmt"
+func createDirectory(emu *WinEmulator, in *Instruction, wide bool) func(*WinEmulator, *Instruction) bool {
+	stringAddress := in.Args[0]
+	var path string
+	if wide {
+		path = util.ReadWideChar(emu.Uc, stringAddress, 0)
+	} else {
+		path = util.ReadASCII(emu.Uc, stringAddress, 0)
+	}
+	//its an absolute path we have to check if the drive exists.
+	//Some malwares add weird directory to check if its being emulated.
+	if strings.Contains(path, ":\\") {
+		drive := path[0]
+		allowed := "ABCDEF"
+		if !strings.Contains(allowed, string(drive)) {
+			return SkipFunctionStdCall(true, 0)
+		}
+
+	}
+
+	return SkipFunctionStdCall(true, 0x1)
+}
 
 func FileapiHooks(emu *WinEmulator) {
 
@@ -20,7 +42,15 @@ func FileapiHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "CreateDirectoryA", &Hook{
 		Parameters: []string{"a:lpPathName", "lpSecurityAttributes"},
-		Fn:         SkipFunctionStdCall(true, 0x1),
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return createDirectory(emu, in, false)(emu, in)
+		},
+	})
+	emu.AddHook("", "CreateDirectoryW", &Hook{
+		Parameters: []string{"w:lpPathName", "lpSecurityAttributes"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return createDirectory(emu, in, true)(emu, in)
+		},
 	})
 	emu.AddHook("", "DeleteFileA", &Hook{
 		Parameters: []string{"a:lpFileName"},

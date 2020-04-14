@@ -33,10 +33,12 @@ func ProcessthreadsapiHooks(emu *WinEmulator) {
 	emu.AddHook("", "TerminateProcess", &Hook{
 		Parameters: []string{"hProcess", "uExitCode"},
 		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			if in.Args[0] == 0xffffffff {
+				return false
+			}
 			success := emu.ProcessManager.terminateProcess(int(in.Args[0]))
 			if success {
 				return SkipFunctionStdCall(true, 0x1337)(emu, in)
-
 			} else {
 				return SkipFunctionStdCall(true, 0)(emu, in)
 			}

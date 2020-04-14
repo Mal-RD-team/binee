@@ -1520,12 +1520,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(false, 0x0)(emu, in)
 		},
 	})
-	emu.AddHook("", "TerminateProcess", &Hook{
-		Parameters: []string{"hProcess", "uExitCode"},
-		Fn: func(emu *WinEmulator, instr *Instruction) bool {
-			return false
-		},
-	})
+
 	emu.AddHook("", "TlsAlloc", &Hook{
 		Parameters: []string{},
 		Fn:         SkipFunctionStdCall(true, 0x1),
