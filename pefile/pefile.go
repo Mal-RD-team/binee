@@ -414,7 +414,13 @@ func analyzePeFile(data []byte, pe *PeFile) error {
 		pe.Sections[i].Entropy = entropy(raw)
 	}
 
-	pe.RawHeaders = data[0:pe.Sections[0].Offset]
+	headersOffset := uint32(0xFFFFFFFF)
+	for _, section := range pe.Sections {
+		if section.Offset < headersOffset && section.Offset != 0 {
+			headersOffset = section.Offset
+		}
+	}
+	pe.RawHeaders = data[0:headersOffset]
 	pe.HeadersAsSection = &Section{"HeadersSection", uint32(len(pe.RawHeaders)), 0, uint32(len(pe.RawHeaders)), 0, 0, 0, 0, 0, 0, pe.RawHeaders, 0}
 	pe.readImports()
 	if err = pe.readExports(); err != nil {
@@ -506,6 +512,7 @@ func (pe *PeFile) readExports() error {
 
 	pe.ExportNameMap = make(map[string]*Export)
 	pe.ExportOrdinalMap = make(map[int]*Export)
+
 	pe.ForwardedExports = make(map[string]ForwardedExport)
 	pe.ForwardedExportsByOrdinal = make(map[uint16]ForwardedExport)
 	for i := 0; i < int(exportDirectory.NumberOfNamePointers); i++ {
@@ -666,7 +673,7 @@ func (pe *PeFile) readImports() {
 		}
 
 		importDirectory := ImportDirectory{}
-		if err := binary.Read(r, binary.LittleEndian, &importDirectory); err != nil {
+		if err := binary.Read(r, binary.LittleEndian, &importDirectory); err != nil && err != io.EOF {
 			log.Fatal(err)
 		}
 		// end of "array" is an empty struct, import lookup table is the first
