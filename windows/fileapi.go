@@ -68,6 +68,7 @@ func FileapiHooks(emu *WinEmulator) {
 		Parameters: []string{"a:lpFileName", "lpFindFileData"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
+
 	emu.AddHook("", "FindNextFileA", &Hook{
 		Parameters: []string{"hFindFile", "lpFindFileData"},
 		Fn:         SkipFunctionStdCall(true, 0x0),
@@ -184,6 +185,12 @@ func FileapiHooks(emu *WinEmulator) {
 			return SkipFunctionStdCall(true, 0x0)(emu, in)
 
 		},
-		//Fn:         SkipFunctionStdCall(true, 0x80),
+	})
+
+	emu.AddHook("", "CopyFileA", &Hook{
+		Parameters: []string{"a:lpExistingFileName", "a:lpNewFileName", "b:bFailIfExists"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0x1)(emu, in)
+		},
 	})
 }

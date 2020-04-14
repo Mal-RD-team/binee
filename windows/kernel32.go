@@ -573,24 +573,55 @@ func expandEnvironmentStrings(emu *WinEmulator, in *Instruction, wide bool) func
 //	}
 //}
 
-//Parameters: []string{"w:lpFileName", "dwDesiredAccess", "dwShareMode", "lpSecurityAttributes", "dwCreationDisposition", "dwFlagsAndAttributes", "hTemplateFile"},
+//HRSRC FindResourceA(
+// HMODULE hModule,
+// LPCSTR  lpName,
+// LPCSTR  lpType
+//);
+func FindResource(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
+	var resourceName string
+	var resourceType string
+	if wide {
+		resourceName = util.ReadWideChar(emu.Uc, in.Args[1], 0)
+		resourceType = util.ReadWideChar(emu.Uc, in.Args[2], 0)
+	} else {
+		resourceName = util.ReadASCII(emu.Uc, in.Args[1], 0)
+		resourceType = util.ReadASCII(emu.Uc, in.Args[2], 0)
+	}
 
-//func FindResource(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
-//	//Check first if there was a name or an id.
-//	//We will depend on the function, which is a hacky method.
-//	//This function returns an empty string when no access occurs
-//	//which will be the case  here in case of id (lower word).
-//	handle:=emu.Handles[in.Args[0]]
-//
-//	var name string
-//	if wide == false {
-//		name = util.ReadASCII(emu.Uc, in.Args[1], 0)
-//	} else {
-//		name = util.ReadWideChar(emu.Uc, in.Args[1], 0)
-//	}
-//
-//
-//}
+	handle := in.Args[0]
+	if handle == emu.MemRegions.ImageAddress {
+		//According documentation, if the string has # in the index 0, then what's leading is an int representing an identifier.
+		var resourceNameRaw interface{}
+		resourceNameRaw = resourceName
+		if resourceName[0] == '#' {
+			var err error
+			resourceNameRaw, err = strconv.Atoi(resourceName[1:])
+			if err != nil {
+				return SkipFunctionStdCall(true, 0) //Failed to parse
+			}
+		}
+		var resourceTypeRaw interface{}
+		resourceTypeRaw = resourceType
+		if resourceType[0] == '#' {
+			var err error
+			resourceNameRaw, err = strconv.Atoi(resourceType[1:])
+			if err != nil {
+				return SkipFunctionStdCall(true, 0) //Failed to parse
+			}
+		}
+		data_entry := pefile.FindResource(emu.ResourcesRoot, resourceNameRaw, resourceTypeRaw)
+		addr := emu.Heap.Malloc(4)
+		handle := &Handle{ResourceDataEntry: data_entry}
+		emu.Handles[addr] = handle
+		return SkipFunctionStdCall(true, addr)
+
+	} else {
+		//Handle for other loaded files.
+
+	}
+	return SkipFunctionStdCall(true, 0)
+}
 
 func createFile(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	var path string
@@ -864,23 +895,50 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return createFile(emu, in, true)(emu, in)
 		},
 	})
-	//HRSRC FindResourceA(
-	//  HMODULE hModule,
-	//  LPCSTR  lpName,
-	//  LPCSTR  lpType
+	//HGLOBAL LoadResource(
+	//	HMODULE hModule,
+	//	HRSRC   hResInfo
 	//);
-	//emu.AddHook("","FindResourceA",&Hook{
-	//	Parameters:[]string{"hModule","a:lpName","a:lpType"},
-	//	Fn: func(emu *WinEmulator,in *Instruction) bool{
-	//		return FindResource(emu,in,false)(emu,in)
-	//	},
-	//})
-	//emu.AddHook("","FindResourceW",&Hook{
-	//	Parameters:[]string{"hModule","a:lpName","a:lpType"},
-	//	Fn: func(emu *WinEmulator,in *Instruction) bool{
-	//		return FindResource(emu,in,false)(emu,in)
-	//	},
-	//})
+	emu.AddHook("", "LoadResource", &Hook{
+		Parameters: []string{"hModule", "hResInfo"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			baseAddress := in.Args[0]
+			addr := in.Args[1]
+			dataEntry := emu.Handles[addr].ResourceDataEntry
+			location := baseAddress + uint64(dataEntry.OffsetToData)
+			return SkipFunctionStdCall(true, location)(emu, in)
+		},
+	})
+	emu.AddHook("", "SizeofResource", &Hook{
+		Parameters: []string{"hModule", "hResInfo"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			addr := in.Args[1]
+			if handle, ok := emu.Handles[addr]; ok {
+				return SkipFunctionStdCall(true, uint64(handle.ResourceDataEntry.Size))(emu, in)
+			}
+			return SkipFunctionStdCall(true, 0)(emu, in)
+		},
+	})
+	emu.AddHook("", "LockResource", &Hook{
+		Parameters: []string{"HGlobal"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, in.Args[0])(emu, in)
+		},
+	})
+
+	emu.AddHook("", "FindResourceA", &Hook{
+		Parameters: []string{"hModule", "a:lpName", "a:lpType"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return FindResource(emu, in, false)(emu, in)
+		},
+	})
+
+	emu.AddHook("", "FindResourceW", &Hook{
+		Parameters: []string{"hModule", "a:lpName", "a:lpType"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return FindResource(emu, in, true)(emu, in)
+		},
+	})
 
 	emu.AddHook("", "CreateFileMappingA", &Hook{
 		Parameters: []string{"hFile", "lpFileMappingAttributes", "flProtect", "dwMaximumSizeHigh", "dwMaximumSizeLow", "a:lpName"},

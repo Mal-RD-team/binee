@@ -2,19 +2,21 @@ package windows
 
 import (
 	"fmt"
+	"github.com/carbonblack/binee/pefile"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 type Handle struct {
-	Path     string
-	Access   int32
-	File     *os.File
-	Info     os.FileInfo
-	RegKey   *RegKey
-	Thread   *Thread
-	Snapshot *Snapshot
+	Path              string
+	Access            int32
+	File              *os.File
+	Info              os.FileInfo
+	RegKey            *RegKey
+	Thread            *Thread
+	Snapshot          *Snapshot
+	ResourceDataEntry *pefile.ResourceDataEntry
 }
 
 func (handle *Handle) Close() {
