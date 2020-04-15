@@ -895,10 +895,6 @@ func KernelbaseHooks(emu *WinEmulator) {
 			return createFile(emu, in, true)(emu, in)
 		},
 	})
-	//HGLOBAL LoadResource(
-	//	HMODULE hModule,
-	//	HRSRC   hResInfo
-	//);
 	emu.AddHook("", "LoadResource", &Hook{
 		Parameters: []string{"hModule", "hResInfo"},
 		Fn: func(emulator *WinEmulator, in *Instruction) bool {

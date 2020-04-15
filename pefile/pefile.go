@@ -414,13 +414,14 @@ func analyzePeFile(data []byte, pe *PeFile) error {
 		pe.Sections[i].Entropy = entropy(raw)
 	}
 
-	headersOffset := uint32(0xFFFFFFFF)
-	for _, section := range pe.Sections {
-		if section.Offset < headersOffset && section.Offset != 0 {
-			headersOffset = section.Offset
-		}
+	var headersSize uint32
+	if pe.PeType == Pe32 {
+		headersSize = pe.OptionalHeader.(*OptionalHeader32).SizeOfHeaders
+	} else {
+		headersSize = pe.OptionalHeader.(*OptionalHeader32P).SizeOfHeaders
+
 	}
-	pe.RawHeaders = data[0:headersOffset]
+	pe.RawHeaders = data[0:headersSize]
 	pe.HeadersAsSection = &Section{"HeadersSection", uint32(len(pe.RawHeaders)), 0, uint32(len(pe.RawHeaders)), 0, 0, 0, 0, 0, 0, pe.RawHeaders, 0}
 	pe.readImports()
 	if err = pe.readExports(); err != nil {
