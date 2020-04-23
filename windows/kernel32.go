@@ -440,6 +440,9 @@ func GetModuleHandle(emu *WinEmulator, in *Instruction, wide bool) uint64 {
 		} else {
 			s = strings.ToLower(util.ReadASCII(emu.Uc, in.Args[0], 0))
 		}
+		if s[len(s)-4:] != ".dll" && s[len(s)-4:] != ".exe" && s[len(s)-1] != '.' {
+			s += ".dll"
+		}
 		return emu.LoadedModules[s]
 	}
 	return hinstance

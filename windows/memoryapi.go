@@ -41,9 +41,19 @@ func MemoryApiHooks(emu *WinEmulator) {
 	})
 	emu.AddHook("", "VirtualAllocEx", &Hook{
 		Parameters: []string{"hProcess", "lpAddress", "dwSize", "flAllocationType", "flProtect"},
+		Fn:         SkipFunctionStdCall(true, 1),
 	})
 	emu.AddHook("", "VirtualProtect", &Hook{
 		Parameters: []string{"lpAddress", "dwSize", "flNewProtect", "lpflOldProtect"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
+	})
+
+	emu.AddHook("", "ReadProcessMemory", &Hook{
+		Parameters: []string{"hProcess", "lpBaseAddress", "lpBuffer", "nSize", "lpNumberOfBytesRead"},
+		Fn:         SkipFunctionStdCall(true, 1),
+	})
+	emu.AddHook("", "WriteProcessMemory", &Hook{
+		Parameters: []string{"hProcess", "lpBaseAddress", "lpBuffer", "nSize", "lpNumberOfBytesWritten"},
+		Fn:         SkipFunctionStdCall(true, 1),
 	})
 }
