@@ -325,7 +325,7 @@ func (self *Instruction) ParseValues() {
 			continue
 		case "s:":
 			continue
-		case "b":
+		case "b:":
 			//boolean
 			if self.Args[i] == 0 {
 				self.Hook.Values[i] = "False"

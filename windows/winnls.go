@@ -27,10 +27,12 @@ func WinnlsHooks(emu *WinEmulator) {
 	emu.AddHook("", "GetLocaleInfoA", &Hook{
 		Parameters: []string{"Locale", "LCType", "a:lpLCData", "cchData"},
 		Fn:         getLocaleInfo,
+		NoLog:      true,
 	})
 	emu.AddHook("", "GetLocaleInfoW", &Hook{
 		Parameters: []string{"Locale", "LCType", "w:lpLCData", "cchData"},
 		Fn:         getLocaleInfo,
+		NoLog:      true,
 	})
 	emu.AddHook("", "GetThreadLocale", &Hook{
 		Parameters: []string{},

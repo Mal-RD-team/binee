@@ -130,7 +130,7 @@ func (emu *WinEmulator) GetHook(addr uint64) (string, string, *Hook) {
 	return "", "", nil
 }
 
-// defines the basic log types available in winemulator, avaialble to be set via
+// defines the basic log types available in winemulator, available to be set via
 // command line flags
 const (
 	LogTypeStdout = iota

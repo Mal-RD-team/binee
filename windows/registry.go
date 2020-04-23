@@ -205,7 +205,7 @@ func (r *Registry) update(cur *Reg, path []string, value string) error {
 	return fmt.Errorf("Registry update failed, name not found '%v'", strings.Join(path, "\\"))
 }
 
-// NewRegistry creates a new registry hive with soje default values
+// NewRegistry creates a new registry hive with some default values
 func NewRegistry(temp map[string]string) (*Registry, error) {
 
 	mock := &Registry{make(map[string]*Reg), 0}

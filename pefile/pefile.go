@@ -422,7 +422,7 @@ func analyzePeFile(data []byte, pe *PeFile) error {
 
 	}
 	pe.RawHeaders = data[0:headersSize]
-	pe.HeadersAsSection = &Section{"HeadersSection", uint32(len(pe.RawHeaders)), 0, uint32(len(pe.RawHeaders)), 0, 0, 0, 0, 0, 0, pe.RawHeaders, 0}
+	pe.HeadersAsSection = &Section{"HeadersSection", headersSize, 0, headersSize, 0, 0, 0, 0, 0, 0, pe.RawHeaders, 0}
 	pe.readImports()
 	if err = pe.readExports(); err != nil {
 		return err

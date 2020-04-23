@@ -81,14 +81,6 @@ func getUsername(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmul
 	return SkipFunctionStdCall(true, 1)
 }
 func AdvApi32Hooks(emu *WinEmulator) {
-	//BOOL CheckTokenMembership(
-	//	HANDLE TokenHandle,
-	//	PSID   SidToCheck,
-	//	PBOOL  IsMember
-	//);
-	//PVOID FreeSid(
-	//	PSID pSid
-	//);
 	emu.AddHook("", "FreeSid", &Hook{
 		Parameters: []string{"pSide"},
 		Fn:         SkipFunctionStdCall(true, 0),
@@ -140,6 +132,53 @@ func AdvApi32Hooks(emu *WinEmulator) {
 			entry := startServiceCtrlDispatcher(emu, in.Args[0], true)
 			in.Hook.Values[0] = entry
 			return SkipFunctionStdCall(true, 0x1)(emu, in)
+		},
+	})
+
+	emu.AddHook("", "OpenSCManagerA", &Hook{
+		Parameters: []string{"a:MachineName", "a:DatabaseName", "dwDesiredAccess"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0x1313)(emu, in)
+		},
+	})
+	emu.AddHook("", "OpenSCManagerW", &Hook{
+		Parameters: []string{"w:MachineName", "w:DatabaseName", "dwDesiredAccess"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0x1313)(emu, in)
+		},
+	})
+
+	emu.AddHook("", "OpenServiceA", &Hook{
+		Parameters: []string{"hSCManager", "a:lpServiceName", "dwDesiredAccess"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0)(emu, in)
+		},
+	})
+	emu.AddHook("", "OpenServiceW", &Hook{
+		Parameters: []string{"hSCManager", "w:lpServiceName", "dwDesiredAccess"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0)(emu, in)
+		},
+	})
+
+	emu.AddHook("", "ControlService", &Hook{
+		Parameters: []string{"hService", "dwControl", "lpServiceStatus"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 0)(emu, in)
+		},
+	})
+
+	emu.AddHook("", "CloseServiceHandle", &Hook{
+		Parameters: []string{"hSCObject"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 1)(emu, in)
+		},
+	})
+
+	emu.AddHook("", "DeleteService", &Hook{
+		Parameters: []string{"hService"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, 1)(emu, in)
 		},
 	})
 }
