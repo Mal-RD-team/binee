@@ -102,6 +102,7 @@ type WinEmulator struct {
 	Opts               WinOptions
 	ResourcesRoot      pefile.ResourceDirectory
 	ProcessManager     *ProcessManager
+	CurrentDirectory   string
 	// these commands are used to keep state during single step mode
 	LastCommand  string
 	Breakpoints  map[uint64]uint64
@@ -468,8 +469,8 @@ func LoadMem(pe *pefile.PeFile, path string, args []string, options *WinEmulator
 
 	emu.Heap = core.NewHeap(emu.MemRegions.HeapAddress)
 	emu.Breakpoints = make(map[uint64]uint64)
-
-	os.MkdirAll("temp", os.ModePerm)
+	emu.CurrentDirectory = "temp/" + pe.Sha256 + "/"
+	os.MkdirAll(emu.CurrentDirectory, os.ModePerm)
 
 	emu.Opts = WinOptions{}
 	emu.Opts.User = "aboelmna3m"
@@ -565,7 +566,7 @@ func LoadMem(pe *pefile.PeFile, path string, args []string, options *WinEmulator
 		_ = yaml.Unmarshal(buf, &emu.Opts)
 	}
 	emu.LdrIndex = 0
-	emu.SearchPath = []string{"temp/", emu.Opts.Root + "windows/system32/", "c:\\Windows\\System32"}
+	emu.SearchPath = []string{emu.CurrentDirectory, emu.Opts.Root + "windows/system32/", "c:\\Windows\\System32"}
 
 	var mockRegistry *Registry
 	if mockRegistry, err = NewRegistry(emu.Opts.TempRegistry); err != nil {
