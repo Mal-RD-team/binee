@@ -78,4 +78,13 @@ func ShellapiHooks(emu *WinEmulator) {
 		Parameters: []string{"hwnd", "a:lpOperation", "a:lpFile", "a:lpParameter", "a:lpDirectory", "nShowCmd"},
 		Fn:         SkipFunctionStdCall(true, 33),
 	})
+
+	emu.AddHook("", "FindExecutableA", &Hook{
+		Parameters: []string{"a:lpFile", "a:lpDirectory", "a:lpResult"},
+		Fn: func(emulator *WinEmulator, in *Instruction) bool {
+			result := "C:\\WINDOWS\\system32\\LaunchWinApp.exe"
+			emu.Uc.MemWrite(in.Args[2], append([]byte(result), 0))
+			return SkipFunctionStdCall(true, 33)(emu, in)
+		},
+	})
 }

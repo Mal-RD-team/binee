@@ -369,7 +369,7 @@ func (i *Instruction) StringHook() string {
 		case "a:":
 			s := util.ReadASCII(i.emu.Uc, i.Args[j], 0)
 			if len(s) == 0 {
-				ret += fmt.Sprintf("%s = %d", i.Hook.Parameters[j][2:], i.Args[j])
+				ret += fmt.Sprintf("%s = 0x%x", i.Hook.Parameters[j][2:], i.Args[j])
 			} else {
 				ret += fmt.Sprintf("%s = '%s'", i.Hook.Parameters[j][2:], s)
 			}
@@ -377,6 +377,7 @@ func (i *Instruction) StringHook() string {
 			ret += fmt.Sprintf("%s = %+v", i.Hook.Parameters[j][2:], i.Hook.Values[j])
 		case "s:":
 			ret += fmt.Sprintf("%s = '%s'", i.Hook.Parameters[j][2:], i.Hook.Values[j])
+
 		default:
 			ret += fmt.Sprintf("%s = 0x%x", i.Hook.Parameters[j], i.Args[j])
 		}

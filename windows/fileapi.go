@@ -127,7 +127,7 @@ func FileapiHooks(emu *WinEmulator) {
 	emu.AddHook("", "GetTempPathA", &Hook{
 		Parameters: []string{"nBufferLength", "lpBuffer"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
-			dir := []byte("c:\\temp")
+			dir := append([]byte("c:\\temp"), 0)
 			emu.Uc.MemWrite(in.Args[1], dir)
 			return SkipFunctionStdCall(true, uint64(len(dir)))(emu, in)
 		},
@@ -135,7 +135,7 @@ func FileapiHooks(emu *WinEmulator) {
 	emu.AddHook("", "GetTempPathW", &Hook{
 		Parameters: []string{"nBufferLength", "lpBuffer"},
 		Fn: func(emu *WinEmulator, in *Instruction) bool {
-			dir := util.ASCIIToWinWChar("c:\\temp")
+			dir := append(util.ASCIIToWinWChar("c:\\temp"), 00)
 			emu.Uc.MemWrite(in.Args[1], dir)
 			return SkipFunctionStdCall(true, uint64(len(dir)))(emu, in)
 		},

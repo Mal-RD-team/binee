@@ -981,6 +981,10 @@ func searchEntry(directoryEntry ResourceDirectory, name interface{}) *ResourceDi
 	return nil
 }
 
+func FindResourceType(root ResourceDirectory, typeID interface{}) ResourceDirectory {
+	retType := searchEntry(root, typeID)
+	return retType.ResourceDirectoryNode
+}
 func FindResource(root ResourceDirectory, name interface{}, typeID interface{}) *ResourceDataEntry {
 
 	requiredType := searchEntry(root, typeID)

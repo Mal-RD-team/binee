@@ -255,12 +255,14 @@ func NtdllHooks(emu *WinEmulator) {
 		},
 		NoLog: true,
 	})
-	//SIZE_T RtlSizeHeap
-	//(
-	//	HANDLE      heap,
-	//	ULONG       flags,
-	//const void* ptr
-	//)
+	emu.AddHook("", "RtlReAllocateHeap", &Hook{
+		Parameters: []string{"HeapHandle", "Flags", "MemoryPointer", "Size"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			return SkipFunctionStdCall(true, emu.Heap.Malloc(in.Args[3]))(emu, in)
+		},
+		NoLog: true,
+	})
+
 	emu.AddHook("", "RtlSizeHeap", &Hook{
 		Parameters: []string{"heap", "flags", "ptr"},
 		Fn: func(emulator *WinEmulator, in *Instruction) bool {
