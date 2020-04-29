@@ -576,11 +576,6 @@ func expandEnvironmentStrings(emu *WinEmulator, in *Instruction, wide bool) func
 //	}
 //}
 
-//HRSRC FindResourceA(
-// HMODULE hModule,
-// LPCSTR  lpName,
-// LPCSTR  lpType
-//);
 func FindResource(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	var resourceName string
 	var resourceType string

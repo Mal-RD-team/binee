@@ -5,12 +5,6 @@ import (
 	"github.com/carbonblack/binee/pefile"
 )
 
-//nt LoadStringA(
-//  HINSTANCE hInstance,
-//  UINT      uID,
-//  LPSTR     lpBuffer,
-//  int       cchBufferMax
-//);
 func loadString(emu *WinEmulator, in *Instruction, wide bool) func(emu *WinEmulator, in *Instruction) bool {
 	if in.Args[0] == emu.MemRegions.ImageAddress {
 		resourceID := uint32(((in.Args[1] & 0xFFFF) >> 4) + 1)

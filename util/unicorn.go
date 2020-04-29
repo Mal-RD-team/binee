@@ -72,7 +72,7 @@ func PushStack(u uc.Unicorn, mode int, val uint64) {
 }
 
 // ResolveRegisterByName takes a register name like 'eax' or 'rax' and returns
-// the unicorn enumeration value coorisponding to that register.
+// the unicorn enumeration value corresponding to that register.
 func ResolveRegisterByName(name string) (int, error) {
 	switch strings.ToLower(name) {
 	case "eax":
