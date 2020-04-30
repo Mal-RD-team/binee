@@ -82,6 +82,9 @@ func LibloaderapiHooks(emu *WinEmulator) {
 		Parameters: []string{"hModule", "hResInfo"},
 		Fn: func(emulator *WinEmulator, in *Instruction) bool {
 			baseAddress := in.Args[0]
+			if baseAddress == 0 { //if null then same module
+				baseAddress = emu.MemRegions.ImageAddress
+			}
 			addr := in.Args[1]
 			if _, ok := emu.Handles[addr]; !ok {
 				return SkipFunctionStdCall(true, 0)(emu, in)

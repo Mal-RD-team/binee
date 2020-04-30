@@ -1486,6 +1486,7 @@ func KernelbaseHooks(emu *WinEmulator) {
 			emu.Ticks += in.Args[0]
 			return SkipFunctionStdCall(false, 0x0)(emu, in)
 		},
+		NoLog: true,
 	})
 
 	emu.AddHook("", "TlsAlloc", &Hook{
