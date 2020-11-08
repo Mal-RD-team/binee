@@ -6,6 +6,7 @@ import (
 	"C"
 	"flag"
 	"fmt"
+	"github.com/carbonblack/binee/logger"
 	"github.com/carbonblack/binee/pefile"
 	"github.com/carbonblack/binee/util"
 	"github.com/carbonblack/binee/windows"
@@ -167,12 +168,18 @@ func main() {
 		options.LogType = windows.LogTypeStdout
 	}
 	options.MaxTicks = *maxTicks
-
+	logger.Init()
 	// now start the emulator with the various options
+	//logger.MemoryBenchmark("Start Program")
+
 	emu, err := windows.Load(flag.Arg(0), flag.Args()[1:], options)
+
+	//logger.MemoryBenchmark("Finished Loading")
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	emu.Start()
+	//logger.MemoryBenchmark("Finished Emulation")
+	defer logger.End()
+
 }
