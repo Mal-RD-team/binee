@@ -95,9 +95,12 @@ func CreateProcessAFacts(emu *WinEmulator, in *Instruction) []string {
 	//	is(tid_<lpProcessInformation->dwThreadId>, main_suspended).
 	//	created(pid_<Process who invoked this API>, tid_<>)
 	facts := make([]string, 5)
+	process := emu.ProcessManager.processMap[uint32(emu.ProcessManager.numberOfProcesses)-1]
+	processId := process.the32ProcessID
+	threadId := 1337
 
-	//facts[0]=fmt.Sprintf(FCT_PROCESS,proces)
-	//facts[1]=
+	facts[0] = fmt.Sprintf(FCT_PROCESS, processId)
+	facts[1] = fmt.Sprintf(FCT_THREAD, threadId)
 
 	return facts
 }
