@@ -3,14 +3,15 @@ package windows
 import "github.com/carbonblack/binee/util"
 
 type ProcessInformation struct {
-	hprocess    uint32
-	hThread     uint32
+	hprocess    uint64
+	hThread     uint64
 	dwProcessId uint32
 	dwThreadId  uint32
 }
 
 func createProcess(emu *WinEmulator, in *Instruction) bool {
 	stub := make(map[string]interface{})
+	threadStub := make(map[string]interface{})
 	wide := in.Hook.Name[len(in.Hook.Name)-1] == 'W'
 	var applicationName, commandLine string
 	if wide {
@@ -33,10 +34,20 @@ func createProcess(emu *WinEmulator, in *Instruction) bool {
 	}
 	handleAddr := emu.Heap.Malloc(4)
 	emu.Handles[handleAddr] = procHandle
-	processInfo.hprocess = uint32(handleAddr)
+	processInfo.hprocess = handleAddr
 	processInfo.dwProcessId = process.the32ProcessID
-	processInfo.dwThreadId = 1337
-	processInfo.hThread = uint32(emu.Heap.Malloc(4))
+	threadStub["dwCreationFlags"] = in.Args[5]
+	threadStub["creatorProcessID"] = emu.ProcessManager.currentPid
+	threadStub["ownerProcessID"] = process.the32ProcessID
+	remoteThreadID := emu.ProcessManager.startRemoteThread(threadStub)
+	remoteThread := emu.ProcessManager.remoteThreadMap[uint32(len(emu.ProcessManager.remoteThreadMap))-1]
+	remoteThreadHandle := &Handle{
+		Object: &remoteThread,
+	}
+	rThreadhandleAddr := emu.Heap.Malloc(4)
+	emu.Handles[rThreadhandleAddr] = remoteThreadHandle
+	processInfo.dwThreadId = remoteThreadID
+	processInfo.hThread = rThreadhandleAddr
 	util.StructWrite(emu.Uc, in.Args[9], processInfo)
 
 	return SkipFunctionStdCall(true, 1)(emu, in)
