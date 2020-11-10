@@ -89,7 +89,7 @@ func QueueUserApcFacts(emu *WinEmulator, in *Instruction) []string {
 	return facts
 }
 
-func CreateProcessAFacts(emu *WinEmulator, in *Instruction) []string {
+func CreateProcessFacts(emu *WinEmulator, in *Instruction) []string {
 	//process(pid_<lpProcessInformation->dwProcessId>).
 	//	thread(tid_<lpProcessInformation->dwThreadId>).
 	//	owns(pid<>, tid_<>).
@@ -239,7 +239,8 @@ func InitializeFactsFactory() *FactFactory {
 	factFactory.Factory["ResumeThread"] = FactGenerator{ResumeThreadFacts}
 	factFactory.Factory["OpenThread"] = FactGenerator{OpenThreadFacts}
 	factFactory.Factory["QueueUserAPC"] = FactGenerator{QueueUserApcFacts}
-	factFactory.Factory["CreateProcessA"] = FactGenerator{CreateProcessAFacts}
+	factFactory.Factory["CreateProcessA"] = FactGenerator{CreateProcessFacts}
+	factFactory.Factory["CreateProcessW"] = FactGenerator{CreateProcessFacts}
 	factFactory.Factory["FindWindowA"] = FactGenerator{FindWindowAFacts}
 	factFactory.Factory["ZwSuspendProcess"] = FactGenerator{ZwSuspendProcessFacts}
 	factFactory.Factory["SetPropA"] = FactGenerator{SetPropAFacts}
