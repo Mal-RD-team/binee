@@ -32,6 +32,7 @@ const (
 	FCT_CREATED   = "created(" + FCT_PROCESS_ID_SUFFIX + "," + FCT_THREAD_ID_SUFFIX + ")."
 	FCT_QUEUED    = "queued(" + FCT_PROCESS_ID_SUFFIX + "," + FCT_THREAD_ID_SUFFIX + ")."
 	FCT_SEARCHES  = "searches(" + FCT_PROCESS_ID_SUFFIX + "," + FCT_UUID_NAME_SUFFIX + "," + FCT_PROCESS_ID_SUFFIX + ")."
+	FCT_CHECKS    = "checks(" + FCT_PROCESS_ID_SUFFIX + ",%s)."
 
 	LOCATES_WINDOW      = "locatesWindow"
 	FCT_CREATED_FILEMAP = "createdFileMap(%s,%s)."

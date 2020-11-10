@@ -177,7 +177,7 @@ func InitWinEmulatorOptions() *WinEmulatorOptions {
 		ShowDLL:       false,
 		MaxTicks:      0,
 		LogType:       LogTypeStdout,
-		GenerateFacts: false,
+		GenerateFacts: true,
 	}
 }
 

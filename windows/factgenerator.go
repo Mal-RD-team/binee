@@ -2,6 +2,7 @@ package windows
 
 import (
 	"fmt"
+	"github.com/carbonblack/binee/util"
 )
 
 type FactFactory struct {
@@ -95,13 +96,22 @@ func CreateProcessAFacts(emu *WinEmulator, in *Instruction) []string {
 	//	is(tid_<lpProcessInformation->dwThreadId>, main_suspended).
 	//	created(pid_<Process who invoked this API>, tid_<>)
 	facts := make([]string, 5)
-	process := emu.ProcessManager.processMap[uint32(emu.ProcessManager.numberOfProcesses)-1]
-	processId := process.the32ProcessID
-	threadId := 1337
+	processInfo := &ProcessInformation{}
 
+	processInfoInterface, err := util.StructRead(emu.Uc, in.Args[9], processInfo)
+	if err != nil {
+		processInfo = processInfoInterface.(*ProcessInformation)
+	}
+	processId := processInfo.DwProcessId
+	threadId := processInfo.DwThreadId
 	facts[0] = fmt.Sprintf(FCT_PROCESS, processId)
 	facts[1] = fmt.Sprintf(FCT_THREAD, threadId)
-
+	facts[2] = fmt.Sprintf(FCT_OWNS, processId, threadId)
+	mainThreadStatus := in.Args[5]
+	if mainThreadStatus&CREATE_SUSPENDED == 4 {
+		facts[3] = fmt.Sprintf(FCT_THREAD_IS, threadId, "status_suspended")
+	}
+	facts[4] = fmt.Sprintf(FCT_CREATED, FCT_SELF_PROCESS_ID, in.ThreadID)
 	return facts
 }
 
@@ -136,6 +146,26 @@ func ZwSuspendProcessFacts(emu *WinEmulator, in *Instruction) []string {
 	facts[0] = fmt.Sprintf(FCT_PROCESS, processID)
 	facts[1] = fmt.Sprintf(FCT_PROCESS_IS, processID, "status_suspended")
 	facts[2] = fmt.Sprintf(FCT_THREAD_IS, threadID, "status_suspended")
+	return facts
+}
+func CheckRemoteDebuggerPresentFacts(emu *WinEmulator, in *Instruction) []string {
+	processHandle := in.Args[0]
+	processID, err := emu.getProcessID(processHandle)
+
+	if err != nil {
+		return []string{}
+	}
+	facts := make([]string, 1)
+	pdbger, _ := emu.Uc.MemRead(in.Args[1], 1)
+	debuggerStatus := ""
+
+	if pdbger[0] != 0 {
+		debuggerStatus = "being_debugged"
+	} else {
+		debuggerStatus = "not_debugged"
+	}
+	facts[0] = fmt.Sprintf(FCT_CHECKS, processID, debuggerStatus)
+
 	return facts
 }
 
@@ -203,6 +233,7 @@ func InitializeFactsFactory() *FactFactory {
 	factFactory.Factory["CreateFileMappingA"] = FactGenerator{CreateFileMappingAFacts}
 	factFactory.Factory["MapViewOfFile"] = FactGenerator{MapViewOfFile}
 	factFactory.Factory["ZwMapViewOfSection"] = FactGenerator{ZwMapViewOfSectionFacts}
+	factFactory.Factory["CheckRemoteDebuggerPresent"] = FactGenerator{CheckRemoteDebuggerPresentFacts}
 	return factFactory
 }
 
