@@ -26,6 +26,7 @@ type ProcessManager struct {
 	processMap        map[uint32]Process
 	currentPid        uint32
 	remoteThreadMap   map[uint32]RemoteThread
+	atomicProcessNum  uint32
 	atomicRThreadNum  uint32 //base number for remote thread ids 0xca7
 
 }
@@ -47,13 +48,17 @@ type Process struct {
 func InitializeProcessManager(addStub bool) *ProcessManager {
 	newProcessManager := &ProcessManager{numberOfProcesses: 0}
 	newProcessManager.processMap = make(map[uint32]Process)
-	newProcessManager.currentPid = 0
+	newProcessManager.atomicProcessNum = CURRENT_PROC_ID
+	newProcessManager.currentPid = newProcessManager.atomicProcessNum
+	newProcessManager.atomicProcessNum++
 	newProcessManager.remoteThreadMap = make(map[uint32]RemoteThread)
 	if addStub {
 		newProcessManager.addStubProcesses()
 	}
 	newProcess := Process{dwSize: uint32(unsafe.Sizeof(ProcessEntry{})), cntUsage: 0, th32DefaultHeapID: 0, th32ModuleID: 0, dwFlags: 0}
-	newProcess.the32ProcessID = CURRENT_PROC_ID
+
+	newProcess.the32ProcessID = newProcessManager.atomicProcessNum
+	newProcessManager.atomicProcessNum++
 	//Create current process
 	newProcessManager.processMap[newProcess.the32ProcessID] = newProcess
 	newProcessManager.numberOfProcesses++
@@ -840,6 +845,9 @@ func (p *ProcessManager) startProcess(parameters map[string]interface{}) bool {
 		case "th32ParentProcessID":
 			newProcess.th32ParentProcessID = value.(uint32)
 			continue
+		case "creatorProcessID":
+			newProcess.th32ParentProcessID = value.(uint32)
+			continue
 		case "pcPriClassBase":
 			newProcess.pcPriClassBase = value.(int32)
 			continue
@@ -868,8 +876,8 @@ func (p *ProcessManager) startProcess(parameters map[string]interface{}) bool {
 			break
 		}
 	}
-	newProcess.the32ProcessID = p.currentPid
-	p.processMap[p.currentPid] = newProcess
+	newProcess.the32ProcessID = p.atomicProcessNum
+	p.processMap[p.atomicProcessNum] = newProcess
 	p.numberOfProcesses++
 	p.processList = append(p.processList, newProcess)
 	return true

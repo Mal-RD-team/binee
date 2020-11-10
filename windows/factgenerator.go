@@ -95,7 +95,7 @@ func CreateProcessAFacts(emu *WinEmulator, in *Instruction) []string {
 	//	owns(pid<>, tid_<>).
 	//	is(tid_<lpProcessInformation->dwThreadId>, main_suspended).
 	//	created(pid_<Process who invoked this API>, tid_<>)
-	facts := make([]string, 5)
+	facts := make([]string, 6)
 	processInfo := &ProcessInformation{}
 
 	processInfoInterface, err := util.StructRead(emu.Uc, in.Args[9], processInfo)
@@ -112,7 +112,20 @@ func CreateProcessAFacts(emu *WinEmulator, in *Instruction) []string {
 		facts[3] = fmt.Sprintf(FCT_THREAD_IS, threadId, "status_suspended")
 	}
 	facts[4] = fmt.Sprintf(FCT_CREATED, FCT_SELF_PROCESS_ID, in.ThreadID)
+	wide := in.Hook.Name[len(in.Hook.Name)-1] == 'W'
+	var applicationName, commandLine string
+	if wide {
+		applicationName = util.ReadWideChar(emu.Uc, in.Args[0], 0)
+		commandLine = util.ReadWideChar(emu.Uc, in.Args[1], 0)
+	} else {
+		applicationName = util.ReadASCII(emu.Uc, in.Args[0], 0)
+		commandLine = util.ReadASCII(emu.Uc, in.Args[1], 0)
+	}
+	executionCommandLine := applicationName + commandLine
+	facts[5] = fmt.Sprintf(FCT_EXECUTES, processId, executionCommandLine)
+
 	return facts
+
 }
 
 func FindWindowAFacts(emu *WinEmulator, in *Instruction) []string {

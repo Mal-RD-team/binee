@@ -3,10 +3,10 @@ package windows
 import "github.com/carbonblack/binee/util"
 
 type ProcessInformation struct {
-	hprocess    uint64
-	hThread     uint64
-	dwProcessId uint32
-	dwThreadId  uint32
+	Hprocess    uint64
+	HThread     uint64
+	DwProcessId uint32
+	DwThreadId  uint32
 }
 
 func createProcess(emu *WinEmulator, in *Instruction) bool {
@@ -26,28 +26,30 @@ func createProcess(emu *WinEmulator, in *Instruction) bool {
 	}
 	stub["szExeFile"] = applicationName + commandLine
 	stub["dwFlags"] = uint32(in.Args[5])
+	stub["creatorProcessID"] = emu.ProcessManager.currentPid
 	processInfo := &ProcessInformation{}
 	emu.ProcessManager.startProcess(stub)
-	process := emu.ProcessManager.processMap[uint32(emu.ProcessManager.numberOfProcesses)-1]
+	//process := emu.ProcessManager.processMap[uint32(emu.ProcessManager.numberOfProcesses)-1]
+	process := emu.ProcessManager.processList[uint32(emu.ProcessManager.numberOfProcesses)-1]
 	procHandle := &Handle{
 		Process: &process,
 	}
 	handleAddr := emu.Heap.Malloc(4)
 	emu.Handles[handleAddr] = procHandle
-	processInfo.hprocess = handleAddr
-	processInfo.dwProcessId = process.the32ProcessID
+	processInfo.Hprocess = handleAddr
+	processInfo.DwProcessId = process.the32ProcessID
 	threadStub["dwCreationFlags"] = in.Args[5]
 	threadStub["creatorProcessID"] = emu.ProcessManager.currentPid
 	threadStub["ownerProcessID"] = process.the32ProcessID
 	remoteThreadID := emu.ProcessManager.startRemoteThread(threadStub)
-	remoteThread := emu.ProcessManager.remoteThreadMap[uint32(len(emu.ProcessManager.remoteThreadMap))-1]
+	remoteThread := emu.ProcessManager.remoteThreadMap[process.remoteThreadIds[0]]
 	remoteThreadHandle := &Handle{
 		Object: &remoteThread,
 	}
 	rThreadhandleAddr := emu.Heap.Malloc(4)
 	emu.Handles[rThreadhandleAddr] = remoteThreadHandle
-	processInfo.dwThreadId = remoteThreadID
-	processInfo.hThread = rThreadhandleAddr
+	processInfo.DwThreadId = remoteThreadID
+	processInfo.HThread = rThreadhandleAddr
 	util.StructWrite(emu.Uc, in.Args[9], processInfo)
 
 	return SkipFunctionStdCall(true, 1)(emu, in)
