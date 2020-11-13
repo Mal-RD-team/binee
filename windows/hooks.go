@@ -734,3 +734,36 @@ func CallStdFunction(emu *WinEmulator, functionAddress uint64, parameters []uint
 		emu.Uc.RegWrite(uc.X86_REG_RIP, functionAddress)
 	}
 }
+
+// returns number of bytes written to `dumpFilename`
+// returns 0 if failed
+func DumpHeap(emu *WinEmulator, dumpFilename string) uint64 {
+
+	heapBlocksCount := len(emu.Heap.Heap)
+	if heapBlocksCount == 0 {
+		return 0
+	}
+
+	file, err := os.Create(dumpFilename) //TODO: replace file if exists?!
+	if err != nil {
+		fmt.Printf("Failed to create file %s", dumpFilename)
+		return 0
+	}
+	defer file.Close()
+
+	var totalBytesWritten uint64 = 0
+	for i := 0; i < heapBlocksCount; i++ {
+		heapBlockAddr := emu.Heap.Heap[i].Address
+		heapBlockSize := emu.Heap.Heap[i].Size
+
+		heapBlock, err := emu.Uc.MemRead(heapBlockAddr, heapBlockSize)
+		if err != nil {
+			fmt.Printf("Failed to read heapBlock at %x", heapBlockAddr)
+			continue
+		}
+		file.Write(heapBlock)
+		totalBytesWritten += heapBlockSize
+	}
+
+	return totalBytesWritten
+}
