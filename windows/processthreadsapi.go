@@ -3,8 +3,8 @@ package windows
 import "github.com/carbonblack/binee/util"
 
 type ProcessInformation struct {
-	Hprocess    uint64
-	HThread     uint64
+	Hprocess    uint32
+	HThread     uint32
 	DwProcessId uint32
 	DwThreadId  uint32
 }
@@ -36,20 +36,20 @@ func createProcess(emu *WinEmulator, in *Instruction) bool {
 	}
 	handleAddr := emu.Heap.Malloc(4)
 	emu.Handles[handleAddr] = procHandle
-	processInfo.Hprocess = handleAddr
+	processInfo.Hprocess = uint32(handleAddr)
 	processInfo.DwProcessId = process.the32ProcessID
 	threadStub["dwCreationFlags"] = in.Args[5]
 	threadStub["creatorProcessID"] = emu.ProcessManager.currentPid
 	threadStub["ownerProcessID"] = process.the32ProcessID
 	remoteThreadID := emu.ProcessManager.startRemoteThread(threadStub)
-	remoteThread := emu.ProcessManager.remoteThreadMap[process.remoteThreadIds[0]]
+	remoteThread := emu.ProcessManager.remoteThreadMap[remoteThreadID]
 	remoteThreadHandle := &Handle{
 		Object: &remoteThread,
 	}
 	rThreadhandleAddr := emu.Heap.Malloc(4)
 	emu.Handles[rThreadhandleAddr] = remoteThreadHandle
 	processInfo.DwThreadId = remoteThreadID
-	processInfo.HThread = rThreadhandleAddr
+	processInfo.HThread = uint32(rThreadhandleAddr)
 	util.StructWrite(emu.Uc, in.Args[9], processInfo)
 
 	return SkipFunctionStdCall(true, 1)(emu, in)

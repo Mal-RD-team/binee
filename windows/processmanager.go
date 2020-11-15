@@ -26,6 +26,7 @@ type ProcessManager struct {
 	processMap        map[uint32]Process
 	currentPid        uint32
 	remoteThreadMap   map[uint32]RemoteThread
+	remoteThreads     []RemoteThread
 	atomicProcessNum  uint32
 	atomicRThreadNum  uint32 //base number for remote thread ids 0xca7
 
@@ -63,6 +64,7 @@ func InitializeProcessManager(addStub bool) *ProcessManager {
 	newProcessManager.processMap[newProcess.the32ProcessID] = newProcess
 	newProcessManager.numberOfProcesses++
 	newProcessManager.processList = append(newProcessManager.processList, newProcess)
+	newProcessManager.atomicRThreadNum = 0xca7
 	return newProcessManager
 }
 
@@ -923,6 +925,7 @@ func (p *ProcessManager) startRemoteThread(parameters map[string]interface{}) ui
 
 	if ownerProcess, exists := p.processMap[remoteThread.ownerProcessID]; exists {
 		p.remoteThreadMap[p.atomicRThreadNum] = remoteThread
+		p.remoteThreads = append(p.remoteThreads, remoteThread)
 		ownerProcess.remoteThreadIds = append(ownerProcess.remoteThreadIds, remoteThread.remoteThreadID)
 
 	} else {
