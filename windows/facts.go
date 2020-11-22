@@ -34,6 +34,7 @@ const (
 	FCT_SEARCHES  = "searches(" + FCT_PROCESS_ID_SUFFIX + "," + FCT_UUID_NAME_SUFFIX + "," + FCT_PROCESS_ID_SUFFIX + ")."
 	FCT_CHECKS    = "checks(" + FCT_PROCESS_ID_SUFFIX + ",%s)."
 	FCT_EXECUTES  = "exec(" + FCT_PROCESS_ID_SUFFIX + ",%s)."
+	FCT_TICKS     = "ticks(" + FCT_PROCESS_ID_SUFFIX + ",0x%x)."
 
 	LOCATES_WINDOW      = "locatesWindow"
 	FCT_CREATED_FILEMAP = "createdFileMap(%s,%s)."

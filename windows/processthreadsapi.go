@@ -320,7 +320,7 @@ func ProcessthreadsapiHooks(emu *WinEmulator) {
 	})
 
 	emu.AddHook("", "NtCreateProcessEx", &Hook{
-		Parameters: []string{"ProcessHandle", "DesiredAccess", "oa", "ParentProcess", "InheritObjectTable", "SectionHandle", "DebugPort", "ExceptionPort", "arg9"},
+		Parameters: []string{"ProcessHandle", "DesiredAccess", "OBJECT_ATTRIBUTES", "ParentProcess", "InheritObjectTable", "SectionHandle", "DebugPort", "ExceptionPort", "arg9"},
 		Fn:         SkipFunctionStdCall(true, 0x1337),
 	})
 

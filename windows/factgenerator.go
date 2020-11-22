@@ -188,6 +188,13 @@ func OutputDebugStringFacts(emu *WinEmulator, in *Instruction) []string {
 	return facts
 }
 
+func GetTickCountFacts(emu *WinEmulator, in *Instruction) []string {
+	facts := make([]string, 1)
+	ticks := in.Hook.Return
+	facts[0] = fmt.Sprintf(FCT_TICKS, FCT_SELF_PROCESS_ID, ticks)
+	return facts
+}
+
 func SetPropAFacts(emu *WinEmulator, in *Instruction) []string {
 	facts := make([]string, 2)
 	windowID := in.Args[0]
@@ -257,6 +264,7 @@ func InitializeFactsFactory() *FactFactory {
 	factFactory.Factory["IsDebuggerPresent"] = FactGenerator{IsDebuggerPresentFacts}
 	factFactory.Factory["OutputDebugStringW"] = FactGenerator{OutputDebugStringFacts}
 	factFactory.Factory["OutputDebugStringA"] = FactGenerator{OutputDebugStringFacts}
+	factFactory.Factory["GetTickCount"] = FactGenerator{GetTickCountFacts}
 	return factFactory
 }
 
