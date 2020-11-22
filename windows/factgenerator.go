@@ -49,7 +49,12 @@ func writeProcessMemoryFacts(emu *WinEmulator, in *Instruction) []string {
 }
 
 func createRemoteThreadFacts(emu *WinEmulator, in *Instruction) []string {
-	threadID := in.Hook.Return
+	//threadHandleAdd := in.Hook.Return
+	//handle := emu.Handles[threadHandleAdd]
+	//rthreadHandle := handle.Object.(*RemoteThread)
+	threadID, _ := util.GetPointer(emu.Uc, 4, in.Args[6])
+	//threadInterface, err := util.StructRead(emu.Uc, in.Args[9], threadID)
+
 	processHandle := in.Args[0]
 	processID, err := emu.getProcessID(processHandle)
 	if err != nil {
@@ -164,21 +169,11 @@ func ZwSuspendProcessFacts(emu *WinEmulator, in *Instruction) []string {
 func CheckRemoteDebuggerPresentFacts(emu *WinEmulator, in *Instruction) []string {
 	processHandle := in.Args[0]
 	processID, err := emu.getProcessID(processHandle)
-
 	if err != nil {
 		return []string{}
 	}
 	facts := make([]string, 1)
-	pdbger, _ := emu.Uc.MemRead(in.Args[1], 1)
-	debuggerStatus := ""
-
-	if pdbger[0] != 0 {
-		debuggerStatus = "being_debugged"
-	} else {
-		debuggerStatus = "not_debugged"
-	}
-	facts[0] = fmt.Sprintf(FCT_CHECKS, processID, debuggerStatus)
-
+	facts[0] = fmt.Sprintf(FCT_CHECKS, processID, "debugger_state")
 	return facts
 }
 

@@ -38,7 +38,7 @@ func createProcess(emu *WinEmulator, in *Instruction) bool {
 	emu.Handles[handleAddr] = procHandle
 	processInfo.Hprocess = uint32(handleAddr)
 	processInfo.DwProcessId = process.the32ProcessID
-	threadStub["dwCreationFlags"] = in.Args[5]
+	threadStub["dwCreationFlags"] = uint32(in.Args[5])
 	threadStub["creatorProcessID"] = emu.ProcessManager.currentPid
 	threadStub["ownerProcessID"] = process.the32ProcessID
 	remoteThreadID := emu.ProcessManager.startRemoteThread(threadStub)
@@ -199,18 +199,20 @@ func ProcessthreadsapiHooks(emu *WinEmulator) {
 				return SkipFunctionStdCall(true, 0)(emu, in)
 			}
 			ownerProcessID := hproc.Process.the32ProcessID
-			stackSize := uint64(1 * 1024 * 1024)
+			stackSize := uint32(1 * 1024 * 1024)
 			if in.Args[1] != 0x0 {
-				stackSize = in.Args[1]
+				stackSize = uint32(in.Args[1])
 			}
-			lpParameter := in.Args[3]
+			lpParameter := uint32(in.Args[3])
 			//stack should start at the top of the newly allocated space on the heap
-			stackAddress := emu.Heap.Malloc(stackSize) + stackSize - 0x20
-			lpStartAddress := in.Args[4]
-			dwCreationFlags := in.Args[5]
+			size := uint64(stackSize)
+			stackAddress := emu.Heap.Malloc(size) + size - 0x20
+			lpStartAddress := uint32(in.Args[4])
+			dwCreationFlags := uint32(in.Args[5])
 			stub["creatorProcessID"] = currentProcId
 			stub["lpParameter"] = lpParameter
-			stub["stackAddress"] = stackAddress
+			stub["lpParameter"] = lpParameter
+			stub["stackAddress"] = uint32(stackAddress)
 			stub["stackSize"] = stackSize
 			stub["lpStartAddress"] = lpStartAddress
 			stub["ownerProcessID"] = ownerProcessID
@@ -221,15 +223,15 @@ func ProcessthreadsapiHooks(emu *WinEmulator) {
 			if remotethreadid < 0xca7 {
 				//Todo the dummy process
 			}
-			remoteThread := emu.ProcessManager.remoteThreadMap[uint32(len(emu.ProcessManager.remoteThreadMap))-1]
+			remoteThread := emu.ProcessManager.remoteThreadMap[remotethreadid]
 			remoteThreadHandle := &Handle{
 				Object: &remoteThread,
 			}
 			handleAddr := emu.Heap.Malloc(4)
 			emu.Handles[handleAddr] = remoteThreadHandle
 			// write thread ID back to pointer lpThreadId
-			util.PutPointer(emu.Uc, emu.PtrSize, in.Args[6], uint64(remoteThread.remoteThreadID))
-
+			//util.PutPointer(emu.Uc, 4, uint32(Args[6]), remoteThread.remoteThreadID)
+			util.StructWrite(emu.Uc, in.Args[6], remoteThread.remoteThreadID)
 			return SkipFunctionStdCall(true, handleAddr)(emu, in)
 		},
 	})

@@ -10,12 +10,12 @@ type RemoteThread struct {
 	remoteThreadID   uint32
 	ownerProcessID   uint32
 	creatorProcessID uint32
-	dwCreationFlags  uint64
-	lpStartAddress   uint64
-	lpParameter      uint64
-	dwStackSize      uint64
+	dwCreationFlags  uint32
+	lpStartAddress   uint32
+	lpParameter      uint32
+	dwStackSize      uint32
 	currentState     byte
-	stackAddress     uint64
+	stackAddress     uint32
 	//lpThreadAttributes	uint32 //
 	//thread 				Thread   // todo for future development
 }
@@ -892,10 +892,10 @@ func (p *ProcessManager) startRemoteThread(parameters map[string]interface{}) ui
 
 		switch parameter {
 		case "dwCreationFlags":
-			remoteThread.dwCreationFlags = value.(uint64)
+			remoteThread.dwCreationFlags = value.(uint32)
 			continue
 		case "lpParameter":
-			remoteThread.lpParameter = value.(uint64)
+			remoteThread.lpParameter = value.(uint32)
 			continue
 		case "creatorProcessID":
 			remoteThread.creatorProcessID = value.(uint32)
@@ -904,12 +904,12 @@ func (p *ProcessManager) startRemoteThread(parameters map[string]interface{}) ui
 			remoteThread.ownerProcessID = value.(uint32)
 			continue
 		case "lpStartAddress":
-			remoteThread.lpStartAddress = value.(uint64)
+			remoteThread.lpStartAddress = value.(uint32)
 			continue
 		case "stackSize":
-			remoteThread.dwStackSize = value.(uint64)
+			remoteThread.dwStackSize = value.(uint32)
 		case "stackAddress":
-			remoteThread.stackAddress = value.(uint64)
+			remoteThread.stackAddress = value.(uint32)
 
 		default:
 			fmt.Errorf("specified parameter [%s] not supported", parameter)
