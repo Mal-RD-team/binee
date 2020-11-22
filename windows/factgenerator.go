@@ -176,6 +176,17 @@ func CheckRemoteDebuggerPresentFacts(emu *WinEmulator, in *Instruction) []string
 	facts[0] = fmt.Sprintf(FCT_CHECKS, processID, "debugger_state")
 	return facts
 }
+func IsDebuggerPresentFacts(emu *WinEmulator, in *Instruction) []string {
+	facts := make([]string, 1)
+	facts[0] = fmt.Sprintf(FCT_CHECKS, FCT_SELF_PROCESS_ID, "debugger_state")
+	return facts
+}
+
+func OutputDebugStringFacts(emu *WinEmulator, in *Instruction) []string {
+	facts := make([]string, 1)
+	facts[0] = fmt.Sprintf(FCT_CHECKS, FCT_SELF_PROCESS_ID, "debugger_state")
+	return facts
+}
 
 func SetPropAFacts(emu *WinEmulator, in *Instruction) []string {
 	facts := make([]string, 2)
@@ -243,6 +254,9 @@ func InitializeFactsFactory() *FactFactory {
 	factFactory.Factory["MapViewOfFile"] = FactGenerator{MapViewOfFile}
 	factFactory.Factory["ZwMapViewOfSection"] = FactGenerator{ZwMapViewOfSectionFacts}
 	factFactory.Factory["CheckRemoteDebuggerPresent"] = FactGenerator{CheckRemoteDebuggerPresentFacts}
+	factFactory.Factory["IsDebuggerPresent"] = FactGenerator{IsDebuggerPresentFacts}
+	factFactory.Factory["OutputDebugStringW"] = FactGenerator{OutputDebugStringFacts}
+	factFactory.Factory["OutputDebugStringA"] = FactGenerator{OutputDebugStringFacts}
 	return factFactory
 }
 
