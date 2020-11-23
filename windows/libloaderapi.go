@@ -100,7 +100,8 @@ func getProcAddress(emu *WinEmulator, baseAddress uint64, wantedFuncName string,
 			return 0
 		}
 
-		name := pefile.ReadString(rawExportDirectory[exportAddressTable.Rva-exportRva:])
+		stringStartOffset := exportAddressTable.Rva-exportRva
+		name := pefile.ReadString(rawExportDirectory[stringStartOffset:], len(rawExportDirectory) - int(stringStartOffset) )
 		if name != wantedFuncName && wantedFuncOrdinal == 0 {
 			continue //Another check to stop reads that are not helpful
 		}
@@ -126,7 +127,8 @@ func getProcAddress(emu *WinEmulator, baseAddress uint64, wantedFuncName string,
 			if _, err := r.Seek(int64(rva-exportRva), io.SeekStart); err != nil {
 				return 0
 			}
-			forwardedExportRaw := pefile.ReadString(rawExportDirectory[rva-exportRva:])
+			stringStartOffset := rva-exportRva
+			forwardedExportRaw := pefile.ReadString(rawExportDirectory[stringStartOffset:], len(rawExportDirectory) - int(stringStartOffset) )
 			split := strings.Split(forwardedExportRaw, ".")
 			dllName := strings.ToLower(split[0]) + ".dll"
 			ordinalNum := 0

@@ -431,12 +431,15 @@ func analyzePeFile(data []byte, pe *PeFile) error {
 	return nil
 }
 
-func ReadString(b []byte) string {
-	for i := 0; ; i++ {
+func ReadString(b []byte, maxLength int) string {
+	i := 0
+	for i < maxLength { //TODO: check for off-by-one here
 		if b[i] == 0x0 {
-			return string(b[0:i])
+			break
 		}
+		i++
 	}
+	return string(b[0:i])
 }
 
 type ExportDirectory struct {
@@ -527,7 +530,8 @@ func (pe *PeFile) readExports() error {
 			return fmt.Errorf("Error retrieving %s exports address table: %v", pe.Path, err)
 		}
 
-		name := ReadString(section.Raw[exportAddressTable.Rva-section.VirtualAddress:])
+		stringStartOffset := exportAddressTable.Rva-section.VirtualAddress
+		name := ReadString(section.Raw[stringStartOffset:], int(section.Size - stringStartOffset))
 
 		ordinal = binary.LittleEndian.Uint16(section.Raw[ordinalsTableRVA+uint32(i*2) : ordinalsTableRVA+uint32(i*2)+2])
 
@@ -549,7 +553,8 @@ func (pe *PeFile) readExports() error {
 			if _, err := r.Seek(int64(rva-exportsRva), io.SeekStart); err != nil {
 				return fmt.Errorf("Error seeking forwarded name for exports names table: %v", err)
 			}
-			forwardedExportRaw := ReadString(section.Raw[rva-section.VirtualAddress:])
+			stringStartOffset := rva-section.VirtualAddress
+			forwardedExportRaw := ReadString(section.Raw[stringStartOffset:], int(section.Size - stringStartOffset) )
 			split := strings.Split(forwardedExportRaw, ".")
 			ordinalNum := 0
 			funcName := ""
@@ -595,7 +600,8 @@ func (pe *PeFile) readExports() error {
 			if _, err := r.Seek(int64(rva-exportsRva), io.SeekStart); err != nil {
 				return fmt.Errorf("Error seeking forwarded name for exports names table: %v", err)
 			}
-			forwardedExportRaw := ReadString(section.Raw[rva-section.VirtualAddress:])
+			stringStartOffset := rva-section.VirtualAddress
+			forwardedExportRaw := ReadString(section.Raw[stringStartOffset:], int(section.Size - stringStartOffset) )
 			split := strings.Split(forwardedExportRaw, ".")
 			ordinalNum := 0
 			funcName := ""
@@ -723,7 +729,8 @@ func (pe *PeFile) readImports() {
 		}
 
 		requiredSection := pe.getSectionByRva(uint64(importDirectory.NameRva))
-		name := strings.ToLower(ReadString(requiredSection.Raw[importDirectory.NameRva-requiredSection.VirtualAddress:]))
+		stringStartOffset := importDirectory.NameRva-requiredSection.VirtualAddress
+		name := strings.ToLower(ReadString(requiredSection.Raw[stringStartOffset:], int(requiredSection.Size - stringStartOffset) ))
 
 		if pe.PeType == Pe32 {
 			var thunk1 uint32
@@ -760,7 +767,7 @@ func (pe *PeFile) readImports() {
 					// might be in a different section
 					if sec := pe.getSectionByRva(uint64(thunk1) + 2); sec != nil {
 						v := thunk1 + 2 - sec.VirtualAddress
-						funcName := ReadString(sec.Raw[v:])
+						funcName := ReadString(sec.Raw[v:], int(sec.Size - v) )
 						pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, thunk2, 0})
 						thunk2 += 4
 					}
@@ -800,7 +807,7 @@ func (pe *PeFile) readImports() {
 					// might be in a different section
 					if sec := pe.getSectionByRva(thunk1 + 2); sec != nil {
 						v := uint32(thunk1) + 2 - sec.VirtualAddress
-						funcName := ReadString(sec.Raw[v:])
+						funcName := ReadString(sec.Raw[v:], int(sec.Size - v) )
 						pe.Imports = append(pe.Imports, &ImportInfo{name, funcName, uint32(thunk2), 0})
 						thunk2 += 8
 					}
