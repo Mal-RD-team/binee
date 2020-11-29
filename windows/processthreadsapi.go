@@ -72,6 +72,10 @@ func ProcessthreadsapiHooks(emu *WinEmulator) {
 		Parameters: []string{"hToken", "w:lpApplicationName", "w:lpCommandLine", "lpProcessAttributes", "lpThreadAttributes", "bInheritHandles", "dwCreationFlags", "lpEnvironment", "lpCurrentDirectory", "lpStartupInfo", "lpProcessInformation"},
 		Fn:         SkipFunctionStdCall(true, 0x1),
 	})
+	emu.AddHook("", "GetCurrentProcess", &Hook{
+		Parameters: []string{""},
+		Fn:         SkipFunctionStdCall(true, FCT_SELF_PROCESS_ID),
+	})
 	emu.AddHook("", "OpenProcess", &Hook{
 		Parameters: []string{"dwDesiredAccess", "bInheritHandle", "dwProcessId"},
 		Fn: func(emulator *WinEmulator, in *Instruction) bool {
@@ -139,6 +143,93 @@ func ProcessthreadsapiHooks(emu *WinEmulator) {
 			util.PutPointer(emu.Uc, emu.PtrSize, in.Args[5], uint64(threadHandle.Thread.ThreadId))
 
 			return SkipFunctionStdCall(true, uint64(threadHandle.Thread.ThreadId))(emu, in)
+		},
+	})
+
+	emu.AddHook("", "NtCreateThreadEx ", &Hook{
+		/*
+			typedef NTSTATUS(WINAPI* LPFN_NTCREATETHREADEX)(
+				OUT PHANDLE ThreadHandle,
+				IN ACCESS_MASK DesiredAccess,
+				IN LPVOID ObjectAttributes,
+				IN HANDLE ProcessHandle,
+				IN LPTHREAD_START_ROUTINE ThreadProcedure,
+				IN LPVOID ParameterData,
+				IN BOOL CreateSuspended,
+				IN SIZE_T StackZeroBits,
+				IN SIZE_T SizeOfStackCommit,
+				IN SIZE_T SizeOfStackReserve,
+				OUT LPVOID BytesBuffer);
+		*/
+		Parameters: []string{"ThreadHandle", "DesiredAccess", "ObjectAttributes",
+			"ProcessHandle", "ThreadProcedure", "ParameterData",
+			"CreateSuspended", "StackZeroBits", "SizeOfStackCommit", "SizeOfStackReserve",
+			"BytesBuffer"},
+		Fn: func(emu *WinEmulator, in *Instruction) bool {
+			if int(in.Args[3]) != -1 { //remote thread created
+				stub := make(map[string]interface{})
+				currentProcId := emu.ProcessManager.currentPid
+				hproc := &Handle{}
+				hproc = emu.Handles[in.Args[3]]
+				if hproc == nil {
+					//ToDo Create dummy process
+					return SkipFunctionStdCall(true, 0)(emu, in)
+				}
+				ownerProcessID := hproc.Process.the32ProcessID
+				stackSize := uint32(1 * 1024 * 1024)
+				if uint32(in.Args[8])+uint32(in.Args[9]) != 0x0 {
+					stackSize = uint32(in.Args[8]) + uint32(in.Args[9])
+				}
+				lpParameter := uint32(in.Args[5])
+				//stack should start at the top of the newly allocated space on the heap
+				size := uint64(stackSize)
+				stackAddress := emu.Heap.Malloc(size) + size - 0x20
+				lpStartAddress := uint32(in.Args[4])
+				dwCreationFlags := uint32(0)
+				if in.Args[6] != 0 {
+					dwCreationFlags = uint32(0x4)
+				}
+				stub["creatorProcessID"] = currentProcId
+				stub["lpParameter"] = lpParameter
+				stub["stackAddress"] = uint32(stackAddress)
+				stub["stackSize"] = stackSize
+				stub["lpStartAddress"] = lpStartAddress
+				stub["ownerProcessID"] = ownerProcessID
+				stub["dwCreationFlags"] = dwCreationFlags
+
+				//create new ThreadContext
+				remotethreadid := emu.ProcessManager.startRemoteThread(stub)
+				if remotethreadid < 0xca7 {
+					//Todo the dummy process
+				}
+				remoteThread := emu.ProcessManager.remoteThreadMap[remotethreadid]
+				remoteThreadHandle := &Handle{
+					Object: &remoteThread,
+				}
+				handleAddr := emu.Heap.Malloc(4)
+				emu.Handles[handleAddr] = remoteThreadHandle
+				// write thread ID back to pointer lpThreadId
+				util.PutPointer(emu.Uc, 4, in.Args[0], handleAddr)
+				//util.StructWrite(emu.Uc, in.Args[0], remoteThread.remoteThreadID)
+				return SkipFunctionStdCall(true, 0x0)(emu, in)
+			} else { //normal thread
+				stackSize := uint32(1 * 1024 * 1024)
+				if uint32(in.Args[8])+uint32(in.Args[9]) != 0x0 {
+					stackSize = uint32(in.Args[8]) + uint32(in.Args[9])
+				}
+				//stack should start at the top of the newly allocated space on the heap
+				size := uint64(stackSize)
+				stackAddr := emu.Heap.Malloc(size) + size - 0x20
+				//lpStartAddress := uint32(in.Args[4])
+				threadEip := in.Args[4]
+				lpParameter := in.Args[5]
+				//create new ThreadContext
+
+				threadHandle := emu.Scheduler.NewThread(threadEip, stackAddr, lpParameter, in.Args[6])
+				util.StructWrite(emu.Uc, in.Args[0], threadHandle)
+
+				return SkipFunctionStdCall(true, 0)(emu, in)
+			}
 		},
 	})
 
